@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import DeleteRoundButton from '@/components/DeleteRoundButton'
 import AppShell from '@/components/AppShell'
 import RoundInviteCard from '@/components/RoundInviteCard'
+import Avatar from '@/components/Avatar'
 
 type InviteJoin = { course_name: string }
 type InviterJoin = { name: string }
@@ -19,7 +20,7 @@ export default async function DashboardPage() {
   if (!user) redirect('/auth/login')
 
   const [{ data: profile }, { data: myRounds }, { data: friendships }, { data: pendingInvites }] = await Promise.all([
-    supabase.from('profiles').select('name, username').eq('id', user.id).single(),
+    supabase.from('profiles').select('name, username, avatar_url').eq('id', user.id).single(),
     supabase
       .from('rounds')
       .select('*, players(count)')
@@ -54,7 +55,7 @@ export default async function DashboardPage() {
   const { data: friendRounds } = friendIds.length > 0
     ? await supabase
         .from('rounds')
-        .select('*, profiles!rounds_created_by_fkey(name, username), players(count)')
+        .select('*, profiles!rounds_created_by_fkey(name, username, avatar_url), players(count)')
         .in('created_by', friendIds)
         .order('created_at', { ascending: false })
         .limit(15)
@@ -99,7 +100,9 @@ export default async function DashboardPage() {
 
         <section className="hero-panel px-5 py-5">
           <div className="flex items-start justify-between gap-4">
-            <div>
+            <div className="flex items-start gap-4">
+              <Avatar name={profile?.name ?? 'Golfer'} avatarUrl={profile?.avatar_url} size="lg" />
+              <div>
               <p className="section-label text-[#d6ddcc]">Today&apos;s Board</p>
               <h2 className="mt-2 font-serif text-[2rem] font-semibold leading-none text-[#f8f3e9]">
                 Keep the action moving.
@@ -107,6 +110,7 @@ export default async function DashboardPage() {
               <p className="mt-3 max-w-[18rem] text-sm leading-6 text-[#dbe7dd]">
                 Start a round fast, keep live scores visible, and settle up without digging through menus.
               </p>
+              </div>
             </div>
             <div className="rounded-[1.4rem] border border-white/15 bg-white/10 px-3 py-3 text-right text-[#f8f3e9]">
               <p className="text-[11px] uppercase tracking-[0.2em] text-[#dbe7dd]">Live</p>
@@ -255,7 +259,7 @@ function FriendRoundCard({ round }: {
     date: string
     status: string
     players: { count: number }[]
-    profiles: { name: string; username: string } | null
+    profiles: { name: string; username: string; avatar_url?: string | null } | null
   }
 }) {
   const playerCount = round.players?.[0]?.count ?? 0
@@ -269,9 +273,7 @@ function FriendRoundCard({ round }: {
       href={`/round/${round.id}/leaderboard`}
       className="surface-card flex items-center gap-3 px-4 py-4"
     >
-      <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#dce8df] text-[#174c38]">
-        <span className="font-bold text-sm">{friendName[0].toUpperCase()}</span>
-      </div>
+      <Avatar name={friendName} avatarUrl={round.profiles?.avatar_url} />
       <div className="flex-1 min-w-0">
         <p className="font-semibold text-[#112218] truncate">{round.course_name}</p>
         <p className="mt-1 text-xs text-[#5a6758]">{friendName} · {date} · {playerCount} players</p>

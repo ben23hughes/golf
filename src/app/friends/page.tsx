@@ -3,8 +3,9 @@ import { createClient } from '@/lib/supabase/server'
 import AddFriendSearch from './AddFriendSearch'
 import FriendRequestCard from './FriendRequestCard'
 import AppShell from '@/components/AppShell'
+import Avatar from '@/components/Avatar'
 
-type ProfileRef = { id: string; name: string; username: string }
+type ProfileRef = { id: string; name: string; username: string; avatar_url?: string | null }
 
 function pickProfile(p: ProfileRef | ProfileRef[]): ProfileRef {
   return Array.isArray(p) ? p[0] : p
@@ -20,14 +21,14 @@ export default async function FriendsPage() {
       .from('friendships')
       .select(`
         id, requester_id, addressee_id,
-        requester:profiles!friendships_requester_id_fkey(id, name, username),
-        addressee:profiles!friendships_addressee_id_fkey(id, name, username)
+        requester:profiles!friendships_requester_id_fkey(id, name, username, avatar_url),
+        addressee:profiles!friendships_addressee_id_fkey(id, name, username, avatar_url)
       `)
       .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`)
       .eq('status', 'accepted'),
     supabase
       .from('friendships')
-      .select(`id, requester:profiles!friendships_requester_id_fkey(id, name, username)`)
+      .select(`id, requester:profiles!friendships_requester_id_fkey(id, name, username, avatar_url)`)
       .eq('addressee_id', user.id)
       .eq('status', 'pending'),
   ])
@@ -84,9 +85,7 @@ export default async function FriendsPage() {
             <div className="space-y-3">
               {friends.map((f) => (
                 <div key={f.id} className="surface-card flex items-center gap-3 px-4 py-4">
-                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#dce8df] text-[#174c38]">
-                    <span className="font-bold text-sm">{f.name[0].toUpperCase()}</span>
-                  </div>
+                  <Avatar name={f.name} avatarUrl={f.avatar_url} />
                   <div className="flex-1 min-w-0">
                     <p className="font-semibold text-[#112218]">{f.name}</p>
                     {f.username && <p className="mt-1 text-xs text-[#5a6758]">@{f.username}</p>}

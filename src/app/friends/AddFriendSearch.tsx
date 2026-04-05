@@ -2,8 +2,9 @@
 
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import Avatar from '@/components/Avatar'
 
-type UserResult = { id: string; name: string; username: string }
+type UserResult = { id: string; name: string; username: string; avatar_url?: string | null }
 type RequestStatus = 'idle' | 'sent' | 'already_friends' | 'error'
 
 export default function AddFriendSearch({ currentUserId }: { currentUserId: string }) {
@@ -64,9 +65,7 @@ export default function AddFriendSearch({ currentUserId }: { currentUserId: stri
             const status = sentTo[u.id]
             return (
               <div key={u.id} className="surface-card flex items-center gap-3 px-4 py-4">
-                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#dce8df] text-[#174c38]">
-                  <span className="font-bold text-sm">{u.name[0].toUpperCase()}</span>
-                </div>
+                <Avatar name={u.name} avatarUrl={u.avatar_url} />
                 <div className="flex-1 min-w-0">
                   <p className="font-semibold text-[#112218]">{u.name}</p>
                   {u.username && <p className="mt-1 text-xs text-[#5a6758]">@{u.username}</p>}

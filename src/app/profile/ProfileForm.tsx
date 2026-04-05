@@ -4,12 +4,14 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import LogoutButton from '@/components/LogoutButton'
+import Avatar from '@/components/Avatar'
 
 type ProfileFormProps = {
   userId: string
   initialName: string
   initialUsername: string
   initialEmail: string
+  initialAvatarUrl: string | null
   initialHandicap: number | null
   initialGhinNumber: string | null
 }
@@ -27,17 +29,45 @@ export default function ProfileForm({
   initialName,
   initialUsername,
   initialEmail,
+  initialAvatarUrl,
   initialHandicap,
   initialGhinNumber,
 }: ProfileFormProps) {
   const router = useRouter()
   const [name, setName] = useState(initialName)
   const [username, setUsername] = useState(initialUsername)
+  const [avatarUrl, setAvatarUrl] = useState(initialAvatarUrl)
   const [handicap, setHandicap] = useState(initialHandicap?.toString() ?? '')
   const [ghinNumber, setGhinNumber] = useState(initialGhinNumber ?? '')
   const [error, setError] = useState('')
   const [saved, setSaved] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [uploading, setUploading] = useState(false)
+
+  async function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setError('')
+    setUploading(true)
+    const supabase = createClient()
+    const extension = file.name.split('.').pop()?.toLowerCase() || 'jpg'
+    const path = `${userId}/avatar.${extension}`
+
+    const { error: uploadError } = await supabase.storage
+      .from('avatars')
+      .upload(path, file, { upsert: true })
+
+    if (uploadError) {
+      setError(uploadError.message)
+      setUploading(false)
+      return
+    }
+
+    const { data } = supabase.storage.from('avatars').getPublicUrl(path)
+    setAvatarUrl(`${data.publicUrl}?t=${Date.now()}`)
+    setUploading(false)
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -68,6 +98,7 @@ export default function ProfileForm({
       .update({
         name: name.trim(),
         username: normalizedUsername,
+        avatar_url: avatarUrl,
         handicap: parsedHandicap,
         ghin_number: ghinNumber.trim() || null,
       })
@@ -103,6 +134,22 @@ export default function ProfileForm({
             Profile updated.
           </div>
         )}
+
+        <div className="flex items-center gap-4">
+          <Avatar name={name || initialName} avatarUrl={avatarUrl} size="lg" />
+          <div className="flex-1">
+            <label className="mb-2 block text-sm font-medium text-[#314131]">Profile Picture</label>
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(e) => void handleAvatarChange(e)}
+              className="block w-full text-sm text-[#536153]"
+            />
+            <p className="mt-2 text-xs text-[#5a6758]">
+              {uploading ? 'Uploading…' : 'Upload a square image for the cleanest result.'}
+            </p>
+          </div>
+        </div>
 
         <div>
           <label className="mb-2 block text-sm font-medium text-[#314131]">Name</label>

@@ -3,6 +3,7 @@ export type User = {
   name: string
   username: string
   email: string
+  avatar_url?: string | null
   handicap: number | null
   ghin_number: string | null
   created_at: string

@@ -31,8 +31,33 @@ export default function CreateRoundPage() {
 
   useEffect(() => {
     const supabase = createClient()
-    void supabase.auth.getUser().then(({ data: { user } }) => {
+    void supabase.auth.getUser().then(async ({ data: { user } }) => {
       setCurrentUserId(user?.id ?? null)
+
+      if (!user) {
+        return
+      }
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('name, handicap')
+        .eq('id', user.id)
+        .maybeSingle()
+
+      setPlayers((currentPlayers) => {
+        const firstPlayer = currentPlayers[0]
+        if (!firstPlayer || firstPlayer.name.trim()) {
+          return currentPlayers
+        }
+
+        const nextPlayers = [...currentPlayers]
+        nextPlayers[0] = {
+          name: profile?.name?.trim() || user.email?.split('@')[0] || '',
+          handicap: profile?.handicap != null ? String(profile.handicap) : '',
+          userId: user.id,
+        }
+        return nextPlayers
+      })
     })
   }, [])
 

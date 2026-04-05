@@ -3,8 +3,9 @@
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useState } from 'react'
+import Avatar from '@/components/Avatar'
 
-type ProfileRef = { id: string; name: string; username: string }
+type ProfileRef = { id: string; name: string; username: string; avatar_url?: string | null }
 
 export default function FriendRequestCard({ friendshipId, requester }: { friendshipId: string; requester: ProfileRef }) {
   const router = useRouter()
@@ -28,9 +29,7 @@ export default function FriendRequestCard({ friendshipId, requester }: { friends
 
   return (
     <div className="surface-card flex items-center gap-3 px-4 py-4">
-      <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#ece5d6] text-[#6f695a]">
-        <span className="font-bold text-sm">{requester.name[0].toUpperCase()}</span>
-      </div>
+      <Avatar name={requester.name} avatarUrl={requester.avatar_url} />
       <div className="flex-1 min-w-0">
         <p className="font-semibold text-[#112218]">{requester.name}</p>
         {requester.username && <p className="mt-1 text-xs text-[#5a6758]">@{requester.username}</p>}

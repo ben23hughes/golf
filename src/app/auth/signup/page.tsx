@@ -84,7 +84,7 @@ export default function SignupPage() {
             Create your clubhouse.
           </h1>
           <p className="mt-3 max-w-[18rem] text-sm leading-6 text-[#dbe7dd]">
-            Set up your account once, then start rounds and add players without the usual mess.
+            Track golf bets, start rounds, and settle up automatically.
           </p>
         </div>
 

@@ -15,8 +15,36 @@ const displayFont = Fraunces({
 });
 
 export const metadata: Metadata = {
-  title: "Golf Betting",
-  description: "Track golf bets with friends",
+  metadataBase: new URL("https://golfbetlive.com"),
+  title: "Golf Bet Live",
+  description: "Track golf bets, rounds, and side games with friends.",
+  applicationName: "Golf Bet Live",
+  icons: {
+    icon: "/appicon.png",
+    apple: "/appicon.png",
+    shortcut: "/appicon.png",
+  },
+  openGraph: {
+    title: "Golf Bet Live",
+    description: "Track golf bets, rounds, and side games with friends.",
+    url: "https://golfbetlive.com",
+    siteName: "Golf Bet Live",
+    images: [
+      {
+        url: "/preview.png",
+        width: 2924,
+        height: 1394,
+        alt: "Golf Bet Live",
+      },
+    ],
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Golf Bet Live",
+    description: "Track golf bets, rounds, and side games with friends.",
+    images: ["/preview.png"],
+  },
 };
 
 export const viewport: Viewport = {

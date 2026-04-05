@@ -28,47 +28,55 @@ export default function SignupPage() {
     setError('')
     setLoading(true)
 
-    const normalizedUsername = normalizeUsername(username)
-    if (normalizedUsername.length < 3) {
-      setError('Username must be at least 3 characters and use only letters, numbers, or underscores.')
-      setLoading(false)
-      return
-    }
+    try {
+      const normalizedUsername = normalizeUsername(username)
+      if (normalizedUsername.length < 3) {
+        setError('Username must be at least 3 characters and use only letters, numbers, or underscores.')
+        return
+      }
 
-    const signupResponse = await fetch('/api/auth/signup', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: name.trim(),
-        username: normalizedUsername,
-        email: email.trim(),
-        handicap: handicap.trim() ? Number.parseFloat(handicap) : null,
+      const signupResponse = await fetch('/api/auth/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: name.trim(),
+          username: normalizedUsername,
+          email: email.trim(),
+          handicap: handicap.trim() ? Number.parseFloat(handicap) : null,
+          password,
+        }),
+      })
+
+      let signupResult: { error?: string } | null = null
+      try {
+        signupResult = (await signupResponse.json()) as { error?: string }
+      } catch {
+        signupResult = null
+      }
+
+      if (!signupResponse.ok) {
+        setError(signupResult?.error ?? 'Unable to create account. Check server env vars and try again.')
+        return
+      }
+
+      const supabase = createClient()
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: email.trim().toLowerCase(),
         password,
-      }),
-    })
+      })
 
-    const signupResult = (await signupResponse.json()) as { error?: string }
-    if (!signupResponse.ok) {
-      setError(signupResult.error ?? 'Unable to create account.')
+      if (signInError) {
+        setError(signInError.message)
+        return
+      }
+
+      router.push('/')
+      router.refresh()
+    } catch {
+      setError('Signup failed unexpectedly. If this is deployed, verify Supabase environment variables are set.')
+    } finally {
       setLoading(false)
-      return
     }
-
-    const supabase = createClient()
-    const { error: signInError } = await supabase.auth.signInWithPassword({
-      email: email.trim().toLowerCase(),
-      password,
-    })
-
-    if (signInError) {
-      setError(signInError.message)
-      setLoading(false)
-      return
-    }
-
-    router.push('/')
-    router.refresh()
-    setLoading(false)
   }
 
   async function handleGoogleLogin() {

@@ -21,38 +21,41 @@ export default function LoginPage() {
     setError('')
     setLoading(true)
 
-    const supabase = createClient()
-    const normalizedIdentifier = identifier.trim().toLowerCase()
-    let email = normalizedIdentifier
+    try {
+      const supabase = createClient()
+      const normalizedIdentifier = identifier.trim().toLowerCase()
+      let email = normalizedIdentifier
 
-    if (!isEmail(normalizedIdentifier)) {
-      const { data: resolvedEmail, error: lookupError } = await supabase.rpc('get_login_email', {
-        login_identifier: normalizedIdentifier,
-      })
+      if (!isEmail(normalizedIdentifier)) {
+        const { data: resolvedEmail, error: lookupError } = await supabase.rpc('get_login_email', {
+          login_identifier: normalizedIdentifier,
+        })
 
-      if (lookupError) {
-        setError('Unable to sign in right now. Please try again.')
-        setLoading(false)
-        return
+        if (lookupError) {
+          setError('Unable to sign in right now. Please try again.')
+          return
+        }
+
+        if (!resolvedEmail) {
+          setError('Invalid username/email or password.')
+          return
+        }
+
+        email = resolvedEmail
       }
 
-      if (!resolvedEmail) {
-        setError('Invalid username/email or password.')
-        setLoading(false)
-        return
+      const { error } = await supabase.auth.signInWithPassword({ email, password })
+      if (error) {
+        setError(error.message)
+      } else {
+        router.push('/dashboard')
+        router.refresh()
       }
-
-      email = resolvedEmail
+    } catch {
+      setError('Login failed unexpectedly. Please try again.')
+    } finally {
+      setLoading(false)
     }
-
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) {
-      setError(error.message)
-    } else {
-      router.push('/dashboard')
-      router.refresh()
-    }
-    setLoading(false)
   }
 
   async function handleGoogleLogin() {

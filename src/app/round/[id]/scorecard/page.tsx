@@ -16,6 +16,17 @@ function formatCurrency(amount: number) {
   }).format(amount)
 }
 
+type TeamAssignments = Record<string, { A: string[]; B: string[] }>
+
+function getTeamGames(games: Game[]) {
+  return games.filter((game) => Boolean((game.rules_json as { team_play?: boolean }).team_play))
+}
+
+function getHoleTeams(game: Game, hole: number) {
+  const assignments = (game.rules_json as { team_assignments?: TeamAssignments }).team_assignments ?? {}
+  return assignments[String(hole)] ?? { A: [], B: [] }
+}
+
 export default function ScorecardPage() {
   const { id: roundId } = useParams<{ id: string }>()
   const router = useRouter()
@@ -29,6 +40,7 @@ export default function ScorecardPage() {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [teamSaving, setTeamSaving] = useState(false)
 
   const loadData = useCallback(async () => {
     const supabase = createClient()
@@ -146,8 +158,62 @@ export default function ScorecardPage() {
     await setMultiplier(currentHole, parseFloat(nextMultiplier.toFixed(2)))
   }
 
+  async function updateHoleTeams(team: 'A' | 'B', playerId: string) {
+    const teamGames = getTeamGames(games).filter((game) =>
+      Boolean((game.rules_json as { allow_team_changes?: boolean }).allow_team_changes)
+    )
+
+    if (teamGames.length === 0) return
+
+    setTeamSaving(true)
+    const supabase = createClient()
+    const updates = teamGames.map((game) => {
+      const assignments = (game.rules_json as { team_assignments?: TeamAssignments }).team_assignments ?? {}
+      const current = assignments[String(currentHole)] ?? { A: [], B: [] }
+      const nextA = current.A.filter((id) => id !== playerId)
+      const nextB = current.B.filter((id) => id !== playerId)
+
+      if (team === 'A') nextA.push(playerId)
+      else nextB.push(playerId)
+
+      return {
+        id: game.id,
+        rules_json: {
+          ...game.rules_json,
+          team_assignments: {
+            ...assignments,
+            [String(currentHole)]: { A: nextA, B: nextB },
+          },
+        },
+      }
+    })
+
+    for (const update of updates) {
+      const { error } = await supabase
+        .from('games')
+        .update({ rules_json: update.rules_json })
+        .eq('id', update.id)
+
+      if (error) {
+        setTeamSaving(false)
+        return
+      }
+    }
+
+    setGames((prev) => prev.map((game) => {
+      const update = updates.find((candidate) => candidate.id === game.id)
+      return update ? { ...game, rules_json: update.rules_json } : game
+    }))
+    setTeamSaving(false)
+  }
+
   const allHolesEntered = players.every((p) =>
     Array.from({ length: TOTAL_HOLES }, (_, i) => i + 1).every(
+      (h) => (scores[p.id]?.[h] ?? 0) > 0
+    )
+  )
+  const frontNineEntered = players.every((p) =>
+    Array.from({ length: 9 }, (_, i) => i + 1).every(
       (h) => (scores[p.id]?.[h] ?? 0) > 0
     )
   )
@@ -164,6 +230,11 @@ export default function ScorecardPage() {
   const leaderboard = games.length > 0
     ? calculateLeaderboard(players, scoresList, games, holeMultipliers)
     : []
+  const activeTeamGame = getTeamGames(games)[0] ?? null
+  const currentHoleTeams = activeTeamGame ? getHoleTeams(activeTeamGame, currentHole) : null
+  const canChangeTeamsByHole = activeTeamGame
+    ? Boolean((activeTeamGame.rules_json as { allow_team_changes?: boolean }).allow_team_changes)
+    : false
 
   if (loading) {
     return (
@@ -323,6 +394,65 @@ export default function ScorecardPage() {
           </div>
         )}
 
+        {activeTeamGame && currentHoleTeams && (
+          <div className="surface-card mt-4 p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-[#5a6758]">Teams</p>
+                <p className="mt-1 text-lg font-semibold text-[#112218]">{activeTeamGame.name}</p>
+                <p className="mt-1 text-sm text-[#536153]">
+                  {canChangeTeamsByHole ? 'Tap players to switch teams for this hole.' : 'Teams are fixed for this round.'}
+                </p>
+              </div>
+              {teamSaving && <span className="text-sm text-[#5a6758]">Saving…</span>}
+            </div>
+
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <div className="rounded-2xl bg-[#f8f3e9] px-3 py-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-[#5a6758]">Team A</p>
+                <div className="mt-2 space-y-2">
+                  {players.map((player) => (
+                    <button
+                      key={`${player.id}-hole-A`}
+                      type="button"
+                      disabled={!canChangeTeamsByHole}
+                      onClick={() => void updateHoleTeams('A', player.id)}
+                      className={`w-full rounded-xl px-3 py-2 text-left text-sm transition ${
+                        currentHoleTeams.A.includes(player.id)
+                          ? 'bg-[#174c38] text-[#f8f3e9]'
+                          : 'bg-white text-[#536153]'
+                      } disabled:opacity-60`}
+                    >
+                      {player.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-2xl bg-[#f8f3e9] px-3 py-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-[#5a6758]">Team B</p>
+                <div className="mt-2 space-y-2">
+                  {players.map((player) => (
+                    <button
+                      key={`${player.id}-hole-B`}
+                      type="button"
+                      disabled={!canChangeTeamsByHole}
+                      onClick={() => void updateHoleTeams('B', player.id)}
+                      className={`w-full rounded-xl px-3 py-2 text-left text-sm transition ${
+                        currentHoleTeams.B.includes(player.id)
+                          ? 'bg-[#174c38] text-[#f8f3e9]'
+                          : 'bg-white text-[#536153]'
+                      } disabled:opacity-60`}
+                    >
+                      {player.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="mt-4 space-y-3">
           {players.map((player) => (
             <div key={player.id} className="surface-card-strong flex items-center justify-between px-4 py-4">
@@ -368,7 +498,7 @@ export default function ScorecardPage() {
             {saved ? 'Saved ✓' : saving ? 'Saving…' : currentHole < TOTAL_HOLES ? 'Save & Next Hole' : 'Save Final Hole'}
           </button>
 
-          {allHolesEntered && (
+          {(frontNineEntered || allHolesEntered) && (
             <button
               onClick={finishRound}
               className="secondary-button w-full border-[#174c38] text-[#174c38]"

@@ -17,6 +17,8 @@ type CustomGameEngine = {
   }>
 }
 
+type TeamAssignments = Record<string, { A: string[]; B: string[] }>
+
 export function buildScoreMap(scores: Score[]): ScoreMap {
   const map: ScoreMap = {}
   for (const s of scores) {
@@ -50,6 +52,64 @@ function mergeWinnings(
   for (const [playerId, amount] of Object.entries(source)) {
     target[playerId] = (target[playerId] ?? 0) + amount
   }
+}
+
+function initWinnings(players: Player[]): Record<string, number> {
+  const winnings: Record<string, number> = {}
+  players.forEach((player) => { winnings[player.id] = 0 })
+  return winnings
+}
+
+function getDefaultTeams(players: Player[]) {
+  const A: string[] = []
+  const B: string[] = []
+
+  players.forEach((player, index) => {
+    if (index % 2 === 0) A.push(player.id)
+    else B.push(player.id)
+  })
+
+  return { A, B }
+}
+
+function getTeamsForHole(game: Game, hole: number, players: Player[]) {
+  const assignments = (game.rules_json as { team_assignments?: TeamAssignments }).team_assignments
+  return assignments?.[String(hole)] ?? getDefaultTeams(players)
+}
+
+function getPlayerScoresForHole(
+  team: string[],
+  scoreMap: ScoreMap,
+  hole: number
+) {
+  return team
+    .map((playerId) => scoreMap[playerId]?.[hole])
+    .filter((score): score is number => score !== undefined)
+}
+
+function settleFlatBet(
+  winners: string[],
+  losers: string[],
+  totalAmount: number,
+  winnings: Record<string, number>
+) {
+  if (winners.length === 0 || losers.length === 0 || totalAmount <= 0) return
+
+  const winShare = totalAmount / winners.length
+  const loseShare = totalAmount / losers.length
+
+  winners.forEach((playerId) => { winnings[playerId] += winShare })
+  losers.forEach((playerId) => { winnings[playerId] -= loseShare })
+}
+
+function settleTeamVsTeam(
+  teamA: string[],
+  teamB: string[],
+  winner: 'A' | 'B',
+  totalAmount: number,
+  winnings: Record<string, number>
+) {
+  settleFlatBet(winner === 'A' ? teamA : teamB, winner === 'A' ? teamB : teamA, totalAmount, winnings)
 }
 
 // =====================
@@ -263,6 +323,234 @@ export function calculateMatchPlay(
         winnings[p2.id] += stake
       }
     }
+  }
+
+  return winnings
+}
+
+function calculateBanker(
+  players: Player[],
+  scoreMap: ScoreMap,
+  stake: number,
+  holesPlayed: number,
+  holeMultipliers: Record<number, number> = {}
+): Record<string, number> {
+  const winnings = initWinnings(players)
+
+  for (let hole = 1; hole <= holesPlayed; hole++) {
+    const holeScores = getCompletedHoleScores(players, scoreMap, hole)
+    if (!holeScores) continue
+
+    const banker = players[(hole - 1) % players.length]
+    const bankerScore = scoreMap[banker.id]?.[hole]
+    if (bankerScore === undefined) continue
+
+    const unit = stake * (holeMultipliers[hole] ?? 1)
+    const challengers = holeScores.filter((score) => score.id !== banker.id)
+    const challengerMin = Math.min(...challengers.map((score) => score.strokes))
+
+    if (bankerScore < challengerMin) {
+      challengers.forEach((challenger) => {
+        winnings[banker.id] += unit
+        winnings[challenger.id] -= unit
+      })
+      continue
+    }
+
+    if (bankerScore > challengerMin) {
+      challengers
+        .filter((challenger) => challenger.strokes === challengerMin)
+        .forEach((winner) => {
+          winnings[winner.id] += unit
+          winnings[banker.id] -= unit
+        })
+    }
+  }
+
+  return winnings
+}
+
+function calculateLeftRight(
+  players: Player[],
+  scoreMap: ScoreMap,
+  stake: number,
+  holesPlayed: number,
+  holeMultipliers: Record<number, number> = {}
+): Record<string, number> {
+  const winnings = initWinnings(players)
+
+  for (let hole = 1; hole <= holesPlayed; hole++) {
+    const holeScores = getCompletedHoleScores(players, scoreMap, hole)
+    if (!holeScores) continue
+
+    const minScore = Math.min(...holeScores.map((score) => score.strokes))
+    const winners = holeScores.filter((score) => score.strokes === minScore)
+    if (winners.length !== 1) continue
+
+    const winnerIndex = players.findIndex((player) => player.id === winners[0].id)
+    const leftNeighbor = players[(winnerIndex - 1 + players.length) % players.length]?.id
+    const rightNeighbor = players[(winnerIndex + 1) % players.length]?.id
+    const neighbors = Array.from(new Set([leftNeighbor, rightNeighbor].filter(Boolean))) as string[]
+    const unit = stake * (holeMultipliers[hole] ?? 1)
+
+    neighbors.forEach((neighborId) => {
+      winnings[winners[0].id] += unit
+      winnings[neighborId] -= unit
+    })
+  }
+
+  return winnings
+}
+
+function calculateQuota(
+  players: Player[],
+  scoreMap: ScoreMap,
+  stake: number,
+  holesPlayed: number
+): Record<string, number> {
+  const winnings = initWinnings(players)
+  if (holesPlayed === 0) return winnings
+
+  const totals = Object.fromEntries(players.map((player) => [
+    player.id,
+    Array.from({ length: holesPlayed }, (_, index) => scoreMap[player.id]?.[index + 1] ?? 0)
+      .reduce((sum, value) => sum + value, 0) - ((player.handicap ?? 0) * holesPlayed) / 18,
+  ]))
+
+  for (let i = 0; i < players.length; i++) {
+    for (let j = i + 1; j < players.length; j++) {
+      const p1 = players[i]
+      const p2 = players[j]
+      if (totals[p1.id] < totals[p2.id]) {
+        winnings[p1.id] += stake
+        winnings[p2.id] -= stake
+      } else if (totals[p2.id] < totals[p1.id]) {
+        winnings[p1.id] -= stake
+        winnings[p2.id] += stake
+      }
+    }
+  }
+
+  return winnings
+}
+
+function calculateBestBall(
+  players: Player[],
+  scoreMap: ScoreMap,
+  game: Game,
+  stake: number,
+  holesPlayed: number,
+  holeMultipliers: Record<number, number> = {}
+): Record<string, number> {
+  const winnings = initWinnings(players)
+
+  for (let hole = 1; hole <= holesPlayed; hole++) {
+    const { A, B } = getTeamsForHole(game, hole, players)
+    const teamAScores = getPlayerScoresForHole(A, scoreMap, hole)
+    const teamBScores = getPlayerScoresForHole(B, scoreMap, hole)
+    if (teamAScores.length !== A.length || teamBScores.length !== B.length || A.length === 0 || B.length === 0) continue
+
+    const bestA = Math.min(...teamAScores)
+    const bestB = Math.min(...teamBScores)
+    if (bestA === bestB) continue
+
+    settleTeamVsTeam(A, B, bestA < bestB ? 'A' : 'B', stake * (holeMultipliers[hole] ?? 1), winnings)
+  }
+
+  return winnings
+}
+
+function calculateVegas(
+  players: Player[],
+  scoreMap: ScoreMap,
+  game: Game,
+  stake: number,
+  holesPlayed: number,
+  holeMultipliers: Record<number, number> = {}
+): Record<string, number> {
+  const winnings = initWinnings(players)
+
+  for (let hole = 1; hole <= holesPlayed; hole++) {
+    const { A, B } = getTeamsForHole(game, hole, players)
+    const teamAScores = getPlayerScoresForHole(A, scoreMap, hole).sort((a, b) => a - b)
+    const teamBScores = getPlayerScoresForHole(B, scoreMap, hole).sort((a, b) => a - b)
+    if (teamAScores.length !== 2 || teamBScores.length !== 2) continue
+
+    const vegasA = teamAScores[0] * 10 + teamAScores[1]
+    const vegasB = teamBScores[0] * 10 + teamBScores[1]
+    if (vegasA === vegasB) continue
+
+    settleTeamVsTeam(A, B, vegasA < vegasB ? 'A' : 'B', stake * (holeMultipliers[hole] ?? 1), winnings)
+  }
+
+  return winnings
+}
+
+function calculateWolf(
+  players: Player[],
+  scoreMap: ScoreMap,
+  game: Game,
+  stake: number,
+  holesPlayed: number,
+  holeMultipliers: Record<number, number> = {}
+): Record<string, number> {
+  const winnings = initWinnings(players)
+
+  for (let hole = 1; hole <= holesPlayed; hole++) {
+    const { A, B } = getTeamsForHole(game, hole, players)
+    const teamAScores = getPlayerScoresForHole(A, scoreMap, hole)
+    const teamBScores = getPlayerScoresForHole(B, scoreMap, hole)
+    if (teamAScores.length !== A.length || teamBScores.length !== B.length || A.length === 0 || B.length === 0) continue
+
+    const bestA = Math.min(...teamAScores)
+    const bestB = Math.min(...teamBScores)
+    if (bestA === bestB) continue
+
+    settleTeamVsTeam(A, B, bestA < bestB ? 'A' : 'B', stake * (holeMultipliers[hole] ?? 1), winnings)
+  }
+
+  return winnings
+}
+
+function calculateSixes(
+  players: Player[],
+  scoreMap: ScoreMap,
+  game: Game,
+  stake: number,
+  holesPlayed: number,
+  holeMultipliers: Record<number, number> = {}
+): Record<string, number> {
+  const winnings = initWinnings(players)
+  const segments = [
+    { start: 1, end: 6 },
+    { start: 7, end: 12 },
+    { start: 13, end: 18 },
+  ]
+
+  for (const segment of segments) {
+    let aPoints = 0
+    let bPoints = 0
+    let anyCompleted = false
+
+    for (let hole = segment.start; hole <= Math.min(segment.end, holesPlayed); hole++) {
+      const { A, B } = getTeamsForHole(game, hole, players)
+      const teamAScores = getPlayerScoresForHole(A, scoreMap, hole)
+      const teamBScores = getPlayerScoresForHole(B, scoreMap, hole)
+      if (teamAScores.length !== A.length || teamBScores.length !== B.length || A.length === 0 || B.length === 0) continue
+
+      anyCompleted = true
+      const bestA = Math.min(...teamAScores)
+      const bestB = Math.min(...teamBScores)
+      const weight = holeMultipliers[hole] ?? 1
+
+      if (bestA < bestB) aPoints += weight
+      else if (bestB < bestA) bPoints += weight
+    }
+
+    if (!anyCompleted || aPoints === bPoints) continue
+
+    const { A, B } = getTeamsForHole(game, segment.start, players)
+    settleTeamVsTeam(A, B, aPoints > bPoints ? 'A' : 'B', stake, winnings)
   }
 
   return winnings
@@ -534,6 +822,27 @@ export function calculateLeaderboard(
         break
       case 'match_play':
         result = calculateMatchPlay(players, scoreMap, game.stake, holesPlayed, holeMultipliers)
+        break
+      case 'banker':
+        result = calculateBanker(players, scoreMap, game.stake, holesPlayed, holeMultipliers)
+        break
+      case 'left_right':
+        result = calculateLeftRight(players, scoreMap, game.stake, holesPlayed, holeMultipliers)
+        break
+      case 'quota':
+        result = calculateQuota(players, scoreMap, game.stake, holesPlayed)
+        break
+      case 'best_ball':
+        result = calculateBestBall(players, scoreMap, game, game.stake, holesPlayed, holeMultipliers)
+        break
+      case 'vegas':
+        result = calculateVegas(players, scoreMap, game, game.stake, holesPlayed, holeMultipliers)
+        break
+      case 'wolf':
+        result = calculateWolf(players, scoreMap, game, game.stake, holesPlayed, holeMultipliers)
+        break
+      case 'sixes':
+        result = calculateSixes(players, scoreMap, game, game.stake, holesPlayed, holeMultipliers)
         break
       case 'custom':
         result = calculateCustomGame(players, scoreMap, game, holesPlayed, holeMultipliers)

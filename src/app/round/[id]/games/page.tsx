@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import AppShell from '@/components/AppShell'
+import type { Player } from '@/types'
 
 type PresetGame = {
   type: string
@@ -11,17 +12,19 @@ type PresetGame = {
   description: string
   stakePlaceholder: string
   extraFields?: { key: string; label: string; type: 'checkbox' }[]
+  supportsTeams?: boolean
+  supportsHoleTeamChanges?: boolean
 }
 
 const PRESET_GAMES: PresetGame[] = [
   { type: 'skins', label: 'Skins', description: 'Win a hole outright to win the skin. Ties carry over.', stakePlaceholder: '2' },
   { type: 'nassau', label: 'Nassau', description: 'Three bets: front 9, back 9, and overall 18.', stakePlaceholder: '5', extraFields: [{ key: 'presses_allowed', label: 'Automatic presses', type: 'checkbox' }] },
   { type: 'match_play', label: 'Match Play', description: 'Head-to-head match, most holes won takes the pot.', stakePlaceholder: '10' },
-  { type: 'wolf', label: 'Wolf', description: 'Each hole a player picks a partner or goes solo.', stakePlaceholder: '2' },
-  { type: 'vegas', label: 'Vegas', description: 'Combine two scores per team into one number.', stakePlaceholder: '1' },
-  { type: 'sixes', label: 'Sixes', description: 'Partners rotate every 6 holes.', stakePlaceholder: '5' },
+  { type: 'wolf', label: 'Wolf', description: 'Each hole a player picks a partner or goes solo.', stakePlaceholder: '2', supportsTeams: true, supportsHoleTeamChanges: true },
+  { type: 'vegas', label: 'Vegas', description: 'Combine two scores per team into one number.', stakePlaceholder: '1', supportsTeams: true },
+  { type: 'sixes', label: 'Sixes', description: 'Partners rotate every 6 holes.', stakePlaceholder: '5', supportsTeams: true, supportsHoleTeamChanges: true },
   { type: 'quota', label: 'Quota', description: 'Points system based on handicap quota.', stakePlaceholder: '1' },
-  { type: 'best_ball', label: 'Best Ball', description: 'Best score per team counts on each hole.', stakePlaceholder: '5' },
+  { type: 'best_ball', label: 'Best Ball', description: 'Best score per team counts on each hole.', stakePlaceholder: '5', supportsTeams: true },
   { type: 'left_right', label: 'Left Right', description: 'Win hole, win bets from neighbors.', stakePlaceholder: '2' },
   { type: 'banker', label: 'Banker', description: 'One player takes all bets each hole.', stakePlaceholder: '2' },
 ]
@@ -57,12 +60,35 @@ type SavedTemplate = {
   games_json: SelectedGame[]
 }
 
+type TeamAssignments = Record<string, { A: string[]; B: string[] }>
+
+function createDefaultTeams(players: Player[]): { A: string[]; B: string[] } {
+  const A: string[] = []
+  const B: string[] = []
+
+  players.forEach((player, index) => {
+    if (index % 2 === 0) A.push(player.id)
+    else B.push(player.id)
+  })
+
+  return { A, B }
+}
+
+function buildHoleAssignments(players: Player[]): TeamAssignments {
+  const base = createDefaultTeams(players)
+  return Object.fromEntries(
+    Array.from({ length: 18 }, (_, index) => [String(index + 1), { A: [...base.A], B: [...base.B] }])
+  )
+}
+
 export default function GamesPage() {
   const { id: roundId } = useParams<{ id: string }>()
   const router = useRouter()
 
   const [tab, setTab] = useState<'preset' | 'ai'>('preset')
+  const [players, setPlayers] = useState<Player[]>([])
   const [savedTemplates, setSavedTemplates] = useState<SavedTemplate[]>([])
+  const [expandedInfo, setExpandedInfo] = useState<Record<string, boolean>>({})
   const [selected, setSelected] = useState<SelectedGame | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -82,6 +108,14 @@ export default function GamesPage() {
     const supabase = createClient()
 
     async function loadTemplates() {
+      const { data: playersData } = await supabase
+        .from('players')
+        .select('*')
+        .eq('round_id', roundId)
+        .order('created_at')
+
+      setPlayers((playersData as Player[] | null) ?? [])
+
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
 
@@ -95,13 +129,21 @@ export default function GamesPage() {
     }
 
     void loadTemplates()
-  }, [])
+  }, [roundId])
 
   function selectGame(preset: PresetGame) {
     if (selected?.type === preset.type) {
       setSelected(null)
     } else {
-      setSelected({ name: preset.label, type: preset.type, stake: preset.stakePlaceholder, rules_json: {} })
+      const baseRules: Record<string, unknown> = {}
+
+      if (preset.supportsTeams) {
+        baseRules.team_play = true
+        baseRules.allow_team_changes = !!preset.supportsHoleTeamChanges
+        baseRules.team_assignments = buildHoleAssignments(players)
+      }
+
+      setSelected({ name: preset.label, type: preset.type, stake: preset.stakePlaceholder, rules_json: baseRules })
     }
   }
 
@@ -111,17 +153,46 @@ export default function GamesPage() {
     setSelected(firstGame)
   }
 
-  function updateName(name: string) {
-    if (selected) setSelected({ ...selected, name })
+  function toggleInfo(key: string) {
+    setExpandedInfo((prev) => ({ ...prev, [key]: !prev[key] }))
   }
 
   function updateStake(stake: string) {
     if (selected) setSelected({ ...selected, stake })
   }
 
-function updateRule(key: string, value: unknown) {
-  if (selected) setSelected({ ...selected, rules_json: { ...selected.rules_json, [key]: value } })
-}
+  function updateRule(key: string, value: unknown) {
+    if (selected) setSelected({ ...selected, rules_json: { ...selected.rules_json, [key]: value } })
+  }
+
+  function updateTeamAssignments(nextAssignments: TeamAssignments) {
+    if (!selected) return
+    setSelected({
+      ...selected,
+      rules_json: {
+        ...selected.rules_json,
+        team_play: true,
+        team_assignments: nextAssignments,
+      },
+    })
+  }
+
+  function movePlayerToTeam(playerId: string, team: 'A' | 'B') {
+    if (!selected) return
+
+    const assignments = (selected.rules_json.team_assignments as TeamAssignments | undefined) ?? buildHoleAssignments(players)
+    const nextAssignments = Object.fromEntries(
+      Object.entries(assignments).map(([hole, value]) => {
+        const nextA = value.A.filter((id) => id !== playerId)
+        const nextB = value.B.filter((id) => id !== playerId)
+        if (team === 'A') nextA.push(playerId)
+        else nextB.push(playerId)
+        return [hole, { A: nextA, B: nextB }]
+      })
+    ) as TeamAssignments
+
+    updateTeamAssignments(nextAssignments)
+  }
 
 function formatRuleValue(value: unknown) {
   if (typeof value === 'object' && value !== null) {
@@ -251,6 +322,8 @@ function formatRuleValue(value: unknown) {
   }
 
   const selectedPreset = PRESET_GAMES.find((p) => p.type === selected?.type)
+  const teamAssignments = (selected?.rules_json.team_assignments as TeamAssignments | undefined) ?? buildHoleAssignments(players)
+  const firstHoleTeams = teamAssignments['1'] ?? createDefaultTeams(players)
 
   return (
     <AppShell
@@ -293,22 +366,42 @@ function formatRuleValue(value: unknown) {
                   const isSelected = selected?.name === firstGame.name && selected?.type === firstGame.type
 
                   return (
-                    <button
+                    <div
                       key={template.id}
-                      type="button"
-                      onClick={() => selectSavedTemplate(template)}
-                      className={`surface-card-strong w-full px-4 py-4 text-left transition ${isSelected ? 'ring-2 ring-[#174c38]/25' : ''}`}
+                      className={`surface-card-strong px-4 py-4 transition ${isSelected ? 'ring-2 ring-[#174c38]/25' : ''}`}
                     >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="font-semibold text-[#112218]">{template.name}</p>
-                          <p className="mt-1 text-xs text-[#5a6758]">
-                            {firstGame.type.replace(/_/g, ' ')} · ${firstGame.stake}/player
-                          </p>
+                      <button
+                        type="button"
+                        onClick={() => selectSavedTemplate(template)}
+                        className="w-full text-left"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="font-semibold text-[#112218]">{template.name}</p>
+                            <p className="mt-1 text-xs text-[#5a6758]">
+                              {firstGame.type.replace(/_/g, ' ')} · ${firstGame.stake}/player
+                            </p>
+                          </div>
+                          <span className="status-chip bg-[#dce8df] text-[#174c38]">Saved</span>
                         </div>
-                        <span className="status-chip bg-[#dce8df] text-[#174c38]">Saved</span>
-                      </div>
-                    </button>
+                      </button>
+                      {isSelected && (
+                        <button
+                          type="button"
+                          onClick={() => toggleInfo(`template-${template.id}`)}
+                          className="mt-3 text-sm font-semibold text-[#174c38]"
+                        >
+                          {expandedInfo[`template-${template.id}`] ? 'Hide Info' : 'More Info'}
+                        </button>
+                      )}
+                      {isSelected && expandedInfo[`template-${template.id}`] && (
+                        <div className="mt-3 rounded-2xl bg-[#f8f3e9] px-3 py-3 text-sm text-[#536153]">
+                          {typeof firstGame.rules_json.summary === 'string' && firstGame.rules_json.summary
+                            ? firstGame.rules_json.summary
+                            : 'Saved custom setup ready to reuse.'}
+                        </div>
+                      )}
+                    </div>
                   )
                 })}
               </div>
@@ -321,32 +414,47 @@ function formatRuleValue(value: unknown) {
                   key={preset.type}
                   className={`surface-card-strong transition ${isSelected ? 'ring-2 ring-[#174c38]/25' : ''}`}
                 >
-                  <button
-                    onClick={() => selectGame(preset)}
-                    className="w-full px-4 py-4 flex items-center gap-3 text-left"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-[#112218]">{preset.label}</p>
-                      <p className="mt-1 text-xs text-[#5a6758]">{preset.description}</p>
-                    </div>
-                    <div className={`flex h-7 w-7 items-center justify-center rounded-full border-2 transition ${
-                      isSelected ? 'border-[#174c38] bg-[#174c38]' : 'border-[rgba(17,34,24,0.14)]'
-                    }`}>
-                      {isSelected && <span className="text-white text-xs font-bold">✓</span>}
-                    </div>
-                  </button>
+                  <div className="px-4 py-4">
+                    <button
+                      onClick={() => selectGame(preset)}
+                      className="flex w-full items-center gap-3 text-left"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-[#112218]">{preset.label}</p>
+                        <p className="mt-1 text-xs text-[#5a6758]">
+                          ${preset.stakePlaceholder}/player default
+                        </p>
+                      </div>
+                      <div className={`flex h-7 w-7 items-center justify-center rounded-full border-2 transition ${
+                        isSelected ? 'border-[#174c38] bg-[#174c38]' : 'border-[rgba(17,34,24,0.14)]'
+                      }`}>
+                        {isSelected && <span className="text-white text-xs font-bold">✓</span>}
+                      </div>
+                    </button>
+                    {isSelected && (
+                      <button
+                        type="button"
+                        onClick={() => toggleInfo(preset.type)}
+                        className="mt-3 text-sm font-semibold text-[#174c38]"
+                      >
+                        {expandedInfo[preset.type] ? 'Hide Info' : 'More Info'}
+                      </button>
+                    )}
+                    {isSelected && expandedInfo[preset.type] && (
+                      <div className="mt-3 rounded-2xl bg-[#f8f3e9] px-3 py-3 text-sm text-[#536153]">
+                        <p>{preset.description}</p>
+                        {preset.supportsTeams && (
+                          <p className="mt-2">
+                            Team game
+                            {preset.supportsHoleTeamChanges ? ' with optional team changes by hole.' : ' with fixed team setup.'}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
 
                   {isSelected && selectedPreset && (
                     <div className="space-y-3 border-t border-[rgba(17,34,24,0.08)] px-4 pb-4 pt-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <label className="text-sm text-[#536153]">Game name</label>
-                        <input
-                          type="text"
-                          value={selected.name}
-                          onChange={(e) => updateName(e.target.value)}
-                          className="app-input w-40 px-3 py-2 text-sm"
-                        />
-                      </div>
                       <div className="flex items-center justify-between">
                         <label className="text-sm text-[#536153]">Stake per player</label>
                         <div className="flex items-center overflow-hidden rounded-xl border border-[rgba(17,34,24,0.1)] bg-[#fffdf8]">
@@ -372,6 +480,71 @@ function formatRuleValue(value: unknown) {
                           {field.label}
                         </label>
                       ))}
+                      {selectedPreset.supportsTeams && players.length > 1 && (
+                        <div className="space-y-3 rounded-2xl border border-[rgba(17,34,24,0.08)] bg-[#f8f3e9] p-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-semibold text-[#112218]">Teams</p>
+                              <p className="text-xs text-[#5a6758]">
+                                {selectedPreset.supportsHoleTeamChanges
+                                  ? 'These teams can also be changed hole by hole during the round.'
+                                  : 'Fixed teams for the full round.'}
+                              </p>
+                            </div>
+                            {selectedPreset.supportsHoleTeamChanges && (
+                              <label className="flex items-center gap-2 text-xs font-medium text-[#314131]">
+                                <input
+                                  type="checkbox"
+                                  checked={!!selected.rules_json.allow_team_changes}
+                                  onChange={(e) => updateRule('allow_team_changes', e.target.checked)}
+                                  className="h-4 w-4 accent-[#174c38]"
+                                />
+                                Change by hole
+                              </label>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="rounded-2xl bg-white px-3 py-3">
+                              <p className="text-xs font-semibold uppercase tracking-wide text-[#5a6758]">Team A</p>
+                              <div className="mt-2 space-y-2">
+                                {players.map((player) => (
+                                  <button
+                                    key={`${player.id}-A`}
+                                    type="button"
+                                    onClick={() => movePlayerToTeam(player.id, 'A')}
+                                    className={`w-full rounded-xl px-3 py-2 text-left text-sm transition ${
+                                      firstHoleTeams.A.includes(player.id)
+                                        ? 'bg-[#174c38] text-[#f8f3e9]'
+                                        : 'bg-[#ece5d6] text-[#536153]'
+                                    }`}
+                                  >
+                                    {player.name}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                            <div className="rounded-2xl bg-white px-3 py-3">
+                              <p className="text-xs font-semibold uppercase tracking-wide text-[#5a6758]">Team B</p>
+                              <div className="mt-2 space-y-2">
+                                {players.map((player) => (
+                                  <button
+                                    key={`${player.id}-B`}
+                                    type="button"
+                                    onClick={() => movePlayerToTeam(player.id, 'B')}
+                                    className={`w-full rounded-xl px-3 py-2 text-left text-sm transition ${
+                                      firstHoleTeams.B.includes(player.id)
+                                        ? 'bg-[#174c38] text-[#f8f3e9]'
+                                        : 'bg-[#ece5d6] text-[#536153]'
+                                    }`}
+                                  >
+                                    {player.name}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

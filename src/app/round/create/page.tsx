@@ -336,6 +336,20 @@ export default function CreateRoundPage() {
         setSaving(false)
         return
       }
+
+      try {
+        await fetch('/api/push/round-invite', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            roundId: round.id,
+            courseName: round.course_name,
+            invitedUserIds: inviteRows.map((invite) => invite.invited_user_id),
+          }),
+        })
+      } catch (pushError) {
+        console.error('Failed to trigger round invite notifications', pushError)
+      }
     }
 
     router.push(`/round/${round.id}/games`)

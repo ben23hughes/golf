@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Avatar from '@/components/Avatar'
+import PushNotificationPrompt from '@/components/PushNotificationPrompt'
 
 export default function WelcomeForm({
   userId,
@@ -174,6 +175,10 @@ export default function WelcomeForm({
           >
             Skip For Now
           </button>
+        </div>
+
+        <div className="mt-4">
+          <PushNotificationPrompt />
         </div>
       </div>
     </div>

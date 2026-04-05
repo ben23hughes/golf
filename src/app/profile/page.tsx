@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import ProfileForm from './ProfileForm'
 import AppShell from '@/components/AppShell'
+import PushNotificationPrompt from '@/components/PushNotificationPrompt'
 
 export default async function ProfilePage() {
   const supabase = await createClient()
@@ -23,7 +24,8 @@ export default async function ProfilePage() {
       description="Keep your identity, handicap, and GHIN details clean so round setup stays fast."
       backHref="/dashboard"
     >
-      <div>
+      <div className="space-y-6">
+        <PushNotificationPrompt />
         <ProfileForm
           userId={user.id}
           initialName={profile.name}

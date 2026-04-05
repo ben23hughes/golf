@@ -506,7 +506,23 @@ function calculateWolf(
     const bestB = Math.min(...teamBScores)
     if (bestA === bestB) continue
 
-    settleTeamVsTeam(A, B, bestA < bestB ? 'A' : 'B', stake * (holeMultipliers[hole] ?? 1), winnings)
+    const baseUnit = stake * (holeMultipliers[hole] ?? 1)
+    const loneWolfTeam = A.length === 1 ? 'A' : B.length === 1 ? 'B' : null
+
+    if (!loneWolfTeam) {
+      settleTeamVsTeam(A, B, bestA < bestB ? 'A' : 'B', baseUnit, winnings)
+      continue
+    }
+
+    const soloIds = loneWolfTeam === 'A' ? A : B
+    const fieldIds = loneWolfTeam === 'A' ? B : A
+    const soloWins = loneWolfTeam === 'A' ? bestA < bestB : bestB < bestA
+
+    if (soloWins) {
+      settleFlatBet(soloIds, fieldIds, baseUnit * 2 * fieldIds.length, winnings)
+    } else {
+      settleFlatBet(fieldIds, soloIds, baseUnit * 2 * fieldIds.length, winnings)
+    }
   }
 
   return winnings

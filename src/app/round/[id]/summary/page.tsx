@@ -32,20 +32,12 @@ export default async function SummaryPage({
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
-  const [{ data: round }, { data: players }, { data: scores }, { data: games }, { data: modifiers }, { data: participantRow }] = await Promise.all([
+  const [{ data: round }, { data: players }, { data: scores }, { data: games }, { data: modifiers }] = await Promise.all([
     supabase.from('rounds').select('*').eq('id', roundId).single(),
     supabase.from('players').select('*').eq('round_id', roundId).order('created_at'),
     supabase.from('scores').select('*').eq('round_id', roundId),
     supabase.from('games').select('*').eq('round_id', roundId),
     supabase.from('hole_modifiers').select('hole_number, multiplier').eq('round_id', roundId),
-    user?.id
-      ? supabase
-          .from('players')
-          .select('id')
-          .eq('round_id', roundId)
-          .eq('user_id', user.id)
-          .maybeSingle()
-      : Promise.resolve({ data: null }),
   ])
 
   if (!round) notFound()
@@ -106,7 +98,7 @@ export default async function SummaryPage({
 
   const isDashboardOrigin = resolvedSearchParams?.from === 'dashboard'
   const openDetailsOnLoad = resolvedSearchParams?.open === 'details'
-  const canEditRound = Boolean(user?.id && (round.created_by === user.id || participantRow))
+  const canEditRound = Boolean(user?.id && round.created_by === user.id)
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -199,6 +191,15 @@ export default async function SummaryPage({
           </section>
         )}
 
+        {round.notes && (
+          <section>
+            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">Notes</h2>
+            <div className="rounded-2xl bg-white p-4 shadow-sm">
+              <p className="whitespace-pre-wrap text-sm leading-6 text-gray-700">{round.notes}</p>
+            </div>
+          </section>
+        )}
+
         {/* Full scorecard */}
         <section>
           <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Full Scorecard</h2>
@@ -258,6 +259,7 @@ export default async function SummaryPage({
             roundId={roundId}
             currentCourseName={round.course_name}
             currentDate={round.date}
+            currentNotes={round.notes}
           />
         )}
 

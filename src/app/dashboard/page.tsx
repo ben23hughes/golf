@@ -28,7 +28,7 @@ export default async function DashboardPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth/login')
 
-  const [{ data: profile }, { data: myRounds }, { data: friendships }, { data: pendingInvites }] = await Promise.all([
+  const [{ data: profile }, { data: myRounds }, { data: friendships }, { data: pendingInvites }, { data: acceptedInvites }] = await Promise.all([
     supabase.from('profiles').select('name, username, avatar_url').eq('id', user.id).single(),
     supabase
       .from('rounds')
@@ -53,7 +53,23 @@ export default async function DashboardPage() {
       .eq('invited_user_id', user.id)
       .eq('status', 'pending')
       .order('created_at', { ascending: false }),
+    supabase
+      .from('round_invites')
+      .select('round_id, created_at')
+      .eq('invited_user_id', user.id)
+      .eq('status', 'accepted')
+      .order('created_at', { ascending: false }),
   ])
+
+  const joinedRoundIds = Array.from(new Set((acceptedInvites ?? []).map((invite) => invite.round_id)))
+  const { data: joinedRounds } = joinedRoundIds.length > 0
+    ? await supabase
+        .from('rounds')
+        .select('*, players(count)')
+        .in('id', joinedRoundIds)
+        .neq('created_by', user.id)
+        .order('created_at', { ascending: false })
+    : { data: [] }
 
   // Get friend IDs
   const friendIds = (friendships ?? []).map((f) =>
@@ -179,6 +195,8 @@ export default async function DashboardPage() {
 
   const active = myRounds?.filter((r) => r.status === 'active') ?? []
   const past = myRounds?.filter((r) => r.status === 'completed') ?? []
+  const joinedActive = joinedRounds?.filter((r) => r.status === 'active') ?? []
+  const joinedPast = joinedRounds?.filter((r) => r.status === 'completed') ?? []
   const firstName = profile?.name?.split(' ')[0] ?? 'Golfer'
   const inviteCount = pendingInvites?.length ?? 0
 
@@ -266,6 +284,22 @@ export default async function DashboardPage() {
             <div className="space-y-3">
               {active.map((round) => (
                 <RoundCard key={round.id} round={round} />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {joinedRounds && joinedRounds.length > 0 && (
+          <section className="space-y-3">
+            <div className="flex items-center justify-between px-1">
+              <h2 className="section-label">Rounds I&apos;m In</h2>
+              <span className="text-sm font-medium text-[#536153]">
+                {joinedActive.length} live · {joinedPast.length} finished
+              </span>
+            </div>
+            <div className="space-y-3">
+              {joinedRounds.map((round) => (
+                <ParticipantRoundCard key={round.id} round={round} />
               ))}
             </div>
           </section>
@@ -366,8 +400,36 @@ function RoundCard({ round }: {
         }`}>
           {round.status === 'active' ? 'Live' : 'Done'}
         </span>
-        {round.status === 'active' && <DeleteRoundButton roundId={round.id} />}
+        <DeleteRoundButton roundId={round.id} />
       </div>
+    </div>
+  )
+}
+
+function ParticipantRoundCard({ round }: {
+  round: { id: string; course_name: string; date: string; status: string; players: { count: number }[] }
+}) {
+  const playerCount = round.players?.[0]?.count ?? 0
+  const date = new Date(round.date).toLocaleDateString('en-US', {
+    month: 'short', day: 'numeric', year: 'numeric',
+  })
+
+  return (
+    <div className="surface-card flex items-center justify-between px-4 py-4">
+      <Link
+        href={round.status === 'active' ? `/round/${round.id}/scorecard` : `/round/${round.id}/summary`}
+        className="min-w-0 flex-1 rounded-xl pr-3"
+      >
+        <p className="font-semibold text-[#112218] truncate">{round.course_name}</p>
+        <p className="mt-1 text-sm text-[#5a6758]">{date} · {playerCount} players</p>
+      </Link>
+      <span className={`status-chip flex-shrink-0 ${
+        round.status === 'active'
+          ? 'bg-[#dce8df] text-[#174c38]'
+          : 'bg-[#ece5d6] text-[#6f695a]'
+      }`}>
+        {round.status === 'active' ? 'Live' : 'Done'}
+      </span>
     </div>
   )
 }

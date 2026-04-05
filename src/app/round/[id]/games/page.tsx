@@ -11,22 +11,24 @@ type PresetGame = {
   label: string
   description: string
   stakePlaceholder: string
+  handicapMode?: 'gross' | 'handicap'
+  trackingNote?: string
   extraFields?: { key: string; label: string; type: 'checkbox' }[]
   supportsTeams?: boolean
   supportsHoleTeamChanges?: boolean
 }
 
 const PRESET_GAMES: PresetGame[] = [
-  { type: 'skins', label: 'Skins', description: 'Win a hole outright to win the skin. Ties carry over.', stakePlaceholder: '2' },
-  { type: 'nassau', label: 'Nassau', description: 'Three bets: front 9, back 9, and overall 18.', stakePlaceholder: '5', extraFields: [{ key: 'presses_allowed', label: 'Automatic presses', type: 'checkbox' }] },
-  { type: 'match_play', label: 'Match Play', description: 'Head-to-head match, most holes won takes the pot.', stakePlaceholder: '10' },
-  { type: 'wolf', label: 'Wolf', description: 'Each hole a player picks a partner or goes solo.', stakePlaceholder: '2', supportsTeams: true, supportsHoleTeamChanges: true },
-  { type: 'vegas', label: 'Vegas', description: 'Combine two scores per team into one number.', stakePlaceholder: '1', supportsTeams: true },
-  { type: 'sixes', label: 'Sixes', description: 'Partners rotate every 6 holes.', stakePlaceholder: '5', supportsTeams: true, supportsHoleTeamChanges: true },
-  { type: 'quota', label: 'Quota', description: 'Points system based on handicap quota.', stakePlaceholder: '1' },
-  { type: 'best_ball', label: 'Best Ball', description: 'Best score per team counts on each hole.', stakePlaceholder: '5', supportsTeams: true },
-  { type: 'left_right', label: 'Left Right', description: 'Win hole, win bets from neighbors.', stakePlaceholder: '2' },
-  { type: 'banker', label: 'Banker', description: 'One player takes all bets each hole.', stakePlaceholder: '2' },
+  { type: 'skins', label: 'Skins', description: 'Gross skins: one outright low score wins the hole, and ties carry to the next one.', stakePlaceholder: '2', handicapMode: 'gross', trackingNote: 'Tracks outright hole winners only. No net skins or special carry variants.' },
+  { type: 'nassau', label: 'Nassau', description: 'Three match bets: front 9, back 9, and overall. Automatic presses are optional.', stakePlaceholder: '5', handicapMode: 'gross', trackingNote: 'Tracks the core Nassau bets. Presses here are simplified automatic presses only.', extraFields: [{ key: 'presses_allowed', label: 'Automatic presses', type: 'checkbox' }] },
+  { type: 'match_play', label: 'Match Play', description: 'Pairwise hole match scoring across the field. Most holes won takes the bet.', stakePlaceholder: '10', handicapMode: 'gross', trackingNote: 'Tracks gross match-play results only.' },
+  { type: 'wolf', label: 'Wolf', description: 'Core Wolf scoring with hole-by-hole teams. Solo wolf holes pay like a bigger bet.', stakePlaceholder: '2', handicapMode: 'gross', trackingNote: 'Tracks selected teams and solo wolf payouts. Blind wolf timing and house-rule doubles are not tracked.', supportsTeams: true, supportsHoleTeamChanges: true },
+  { type: 'vegas', label: 'Vegas', description: '2v2 only. Each team combines its low and high gross scores into a two-digit Vegas number.', stakePlaceholder: '1', handicapMode: 'gross', trackingNote: 'Tracks the standard simple Vegas number game. No score-flip or custom multiplier variants.', supportsTeams: true },
+  { type: 'sixes', label: 'Sixes Team Rotation', description: '4-player rotation game. Teams can change by segment, and each six-hole block settles separately.', stakePlaceholder: '5', handicapMode: 'gross', trackingNote: 'This is the 4-player rotating-team version, not the 3-player split-sixes points game.', supportsTeams: true, supportsHoleTeamChanges: true },
+  { type: 'quota', label: 'Quota (Simplified)', description: 'Simplified quota-style race using total strokes adjusted by handicap.', stakePlaceholder: '1', handicapMode: 'handicap', trackingNote: 'This app does not track full par-based quota points, so this version is only a simplified handicap-adjusted strokes race.' },
+  { type: 'best_ball', label: 'Best Ball', description: 'Gross team best ball. The low score on each team is the team score for that hole.', stakePlaceholder: '5', handicapMode: 'gross', trackingNote: 'Tracks gross best ball only.' , supportsTeams: true },
+  { type: 'left_right', label: 'Left Right', description: 'An outright hole winner collects from the players immediately left and right.', stakePlaceholder: '2', handicapMode: 'gross', trackingNote: 'Tracks the simple neighbor version only.' },
+  { type: 'banker', label: 'Banker', description: 'The banker rotates by hole and plays the field. Anyone tying the banker pushes; anyone beating the banker gets paid.', stakePlaceholder: '2', handicapMode: 'gross', trackingNote: 'Tracks the rotating-banker core game without extra presses or side rules.' },
 ]
 
 type SelectedGame = {
@@ -54,10 +56,17 @@ type AiTurn = {
   answer: string
 }
 
+type CustomBuilderMode = 'hole_by_hole' | 'match_play' | 'segment_match'
+type CustomBuilderMatchup = 'all_players' | 'pairwise'
+type CustomBuilderTiePolicy = 'carry' | 'push' | 'halve' | 'split'
+type CustomBuilderPayout = 'winner_takes_from_all' | 'flat_match_bet'
+
 type SavedTemplate = {
   id: string
   name: string
   games_json: SelectedGame[]
+  user_id?: string
+  creator_name?: string
 }
 
 type TeamAssignments = Record<string, { A: string[]; B: string[] }>
@@ -88,8 +97,11 @@ export default function GamesPage() {
   const [tab, setTab] = useState<'preset' | 'ai'>('preset')
   const [players, setPlayers] = useState<Player[]>([])
   const [savedTemplates, setSavedTemplates] = useState<SavedTemplate[]>([])
+  const [friendTemplates, setFriendTemplates] = useState<SavedTemplate[]>([])
   const [expandedInfo, setExpandedInfo] = useState<Record<string, boolean>>({})
   const [selected, setSelected] = useState<SelectedGame | null>(null)
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null)
+  const [templateNameInput, setTemplateNameInput] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -103,6 +115,14 @@ export default function GamesPage() {
   const [aiError, setAiError] = useState('')
   const [templateSaving, setTemplateSaving] = useState(false)
   const [templateMessage, setTemplateMessage] = useState('')
+  const [builderName, setBuilderName] = useState('Custom Game')
+  const [builderStake, setBuilderStake] = useState('10')
+  const [builderMode, setBuilderMode] = useState<CustomBuilderMode>('hole_by_hole')
+  const [builderMatchup, setBuilderMatchup] = useState<CustomBuilderMatchup>('all_players')
+  const [builderTiePolicy, setBuilderTiePolicy] = useState<CustomBuilderTiePolicy>('carry')
+  const [builderPayout, setBuilderPayout] = useState<CustomBuilderPayout>('winner_takes_from_all')
+  const [builderTeamPlay, setBuilderTeamPlay] = useState(false)
+  const [builderAllowTeamChanges, setBuilderAllowTeamChanges] = useState(false)
 
   useEffect(() => {
     const supabase = createClient()
@@ -126,6 +146,41 @@ export default function GamesPage() {
         .order('created_at', { ascending: false })
 
       setSavedTemplates((data as SavedTemplate[] | null) ?? [])
+
+      const { data: friendships } = await supabase
+        .from('friendships')
+        .select('requester_id, addressee_id')
+        .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`)
+        .eq('status', 'accepted')
+
+      const friendIds = (friendships ?? []).map((friendship) =>
+        friendship.requester_id === user.id ? friendship.addressee_id : friendship.requester_id
+      )
+
+      if (friendIds.length === 0) {
+        setFriendTemplates([])
+        return
+      }
+
+      const [{ data: templatesData }, { data: profilesData }] = await Promise.all([
+        supabase
+          .from('game_templates')
+          .select('id, user_id, name, games_json')
+          .in('user_id', friendIds)
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('profiles')
+          .select('id, name')
+          .in('id', friendIds),
+      ])
+
+      const profileNameById = new Map((profilesData ?? []).map((profile) => [profile.id, profile.name]))
+      const hydratedTemplates = ((templatesData as SavedTemplate[] | null) ?? []).map((template) => ({
+        ...template,
+        creator_name: template.user_id ? profileNameById.get(template.user_id) ?? 'Friend' : 'Friend',
+      }))
+
+      setFriendTemplates(hydratedTemplates)
     }
 
     void loadTemplates()
@@ -134,6 +189,8 @@ export default function GamesPage() {
   function selectGame(preset: PresetGame) {
     if (selected?.type === preset.type) {
       setSelected(null)
+      setSelectedTemplateId(null)
+      setTemplateNameInput('')
     } else {
       const baseRules: Record<string, unknown> = {}
 
@@ -144,6 +201,8 @@ export default function GamesPage() {
       }
 
       setSelected({ name: preset.label, type: preset.type, stake: preset.stakePlaceholder, rules_json: baseRules })
+      setSelectedTemplateId(null)
+      setTemplateNameInput('')
     }
   }
 
@@ -151,6 +210,8 @@ export default function GamesPage() {
     const [firstGame] = template.games_json ?? []
     if (!firstGame) return
     setSelected(firstGame)
+    setSelectedTemplateId(template.id)
+    setTemplateNameInput(template.name)
   }
 
   function toggleInfo(key: string) {
@@ -279,7 +340,49 @@ function formatRuleValue(value: unknown) {
 
   async function saveAiTemplate() {
     if (!aiResult) return
+    await saveTemplate(aiResult, 'Saved to your game modes.')
+  }
 
+  async function handleSave() {
+    await saveSelectedGame(selected)
+  }
+
+  function buildManualGame(): SelectedGame {
+    const rules: Record<string, unknown> = {
+      summary: `Custom ${builderMode.replace(/_/g, ' ')} game at $${builderStake || '0'} per player.`,
+      engine: {
+        mode: builderMode,
+        matchup: builderMatchup,
+        scoring: 'low_score',
+        tie_policy: builderTiePolicy,
+        payout_style: builderPayout,
+        ...(builderMode === 'segment_match'
+          ? {
+              segments: [
+                { label: 'Front 9', start_hole: 1, end_hole: 9, stake_multiplier: 1 },
+                { label: 'Back 9', start_hole: 10, end_hole: 18, stake_multiplier: 1 },
+                { label: 'Overall', start_hole: 1, end_hole: 18, stake_multiplier: 1 },
+              ],
+            }
+          : {}),
+      },
+    }
+
+    if (builderTeamPlay) {
+      rules.team_play = true
+      rules.allow_team_changes = builderAllowTeamChanges
+      rules.team_assignments = buildHoleAssignments(players)
+    }
+
+    return {
+      name: builderName.trim() || 'Custom Game',
+      type: 'custom',
+      stake: builderStake || '0',
+      rules_json: rules,
+    }
+  }
+
+  async function saveTemplate(game: SelectedGame, successMessage: string) {
     setTemplateSaving(true)
     setTemplateMessage('')
     const supabase = createClient()
@@ -293,8 +396,8 @@ function formatRuleValue(value: unknown) {
 
     const payload = {
       user_id: user.id,
-      name: aiResult.name.trim() || 'Custom Game',
-      games_json: [aiResult],
+      name: game.name.trim() || 'Custom Game',
+      games_json: [game],
     }
 
     const { data, error: templateError } = await supabase
@@ -313,12 +416,52 @@ function formatRuleValue(value: unknown) {
       setSavedTemplates((prev) => [data as SavedTemplate, ...prev])
     }
 
-    setTemplateMessage('Saved to your game modes.')
+    setTemplateMessage(successMessage)
     setTemplateSaving(false)
   }
 
-  async function handleSave() {
-    await saveSelectedGame(selected)
+  async function renameSavedTemplate() {
+    if (!selectedTemplateId || !templateNameInput.trim()) return
+
+    const supabase = createClient()
+    const { error: templateError } = await supabase
+      .from('game_templates')
+      .update({ name: templateNameInput.trim() })
+      .eq('id', selectedTemplateId)
+
+    if (templateError) {
+      setError(templateError.message)
+      return
+    }
+
+    setSavedTemplates((prev) =>
+      prev.map((template) =>
+        template.id === selectedTemplateId
+          ? { ...template, name: templateNameInput.trim() }
+          : template
+      )
+    )
+    setSelected((prev) => (prev ? { ...prev, name: templateNameInput.trim() } : prev))
+  }
+
+  async function deleteSavedTemplate() {
+    if (!selectedTemplateId) return
+
+    const supabase = createClient()
+    const { error: templateError } = await supabase
+      .from('game_templates')
+      .delete()
+      .eq('id', selectedTemplateId)
+
+    if (templateError) {
+      setError(templateError.message)
+      return
+    }
+
+    setSavedTemplates((prev) => prev.filter((template) => template.id !== selectedTemplateId))
+    setSelectedTemplateId(null)
+    setTemplateNameInput('')
+    setSelected(null)
   }
 
   const selectedPreset = PRESET_GAMES.find((p) => p.type === selected?.type)
@@ -379,7 +522,7 @@ function formatRuleValue(value: unknown) {
                           <div className="min-w-0">
                             <p className="font-semibold text-[#112218]">{template.name}</p>
                             <p className="mt-1 text-xs text-[#5a6758]">
-                              {firstGame.type.replace(/_/g, ' ')} · ${firstGame.stake}/player
+                              Created by You · {firstGame.type.replace(/_/g, ' ')} · ${firstGame.stake}/player
                             </p>
                           </div>
                           <span className="status-chip bg-[#dce8df] text-[#174c38]">Saved</span>
@@ -399,6 +542,89 @@ function formatRuleValue(value: unknown) {
                           {typeof firstGame.rules_json.summary === 'string' && firstGame.rules_json.summary
                             ? firstGame.rules_json.summary
                             : 'Saved custom setup ready to reuse.'}
+                        </div>
+                      )}
+                      {isSelected && selectedTemplateId === template.id && (
+                        <div className="mt-3 space-y-3 rounded-2xl border border-[rgba(17,34,24,0.08)] bg-[#fffdf8] p-3">
+                          <div>
+                            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-[#5a6758]">
+                              Rename Game Mode
+                            </label>
+                            <input
+                              type="text"
+                              value={templateNameInput}
+                              onChange={(e) => setTemplateNameInput(e.target.value)}
+                              className="app-input px-3 py-2.5 text-sm"
+                            />
+                          </div>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => void renameSavedTemplate()}
+                              className="secondary-button flex-1"
+                            >
+                              Save Name
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void deleteSavedTemplate()}
+                              className="rounded-2xl border border-[#e8b2a0] bg-[#fff1ec] px-4 py-3 text-sm font-semibold text-[#a34d2d]"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            {friendTemplates.length > 0 && (
+              <div className="space-y-3">
+                <div className="px-1">
+                  <p className="section-label">Games Made By Friends</p>
+                </div>
+                {friendTemplates.map((template) => {
+                  const firstGame = template.games_json?.[0]
+                  if (!firstGame) return null
+                  const isSelected = selected?.name === firstGame.name && selected?.type === firstGame.type
+
+                  return (
+                    <div
+                      key={template.id}
+                      className={`surface-card-strong px-4 py-4 transition ${isSelected ? 'ring-2 ring-[#174c38]/25' : ''}`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => selectSavedTemplate(template)}
+                        className="w-full text-left"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="font-semibold text-[#112218]">{template.name}</p>
+                            <p className="mt-1 text-xs text-[#5a6758]">
+                              Created by {template.creator_name ?? 'Friend'} · {firstGame.type.replace(/_/g, ' ')} · ${firstGame.stake}/player
+                            </p>
+                          </div>
+                          <span className="status-chip bg-[#ece5d6] text-[#6f695a]">Friend</span>
+                        </div>
+                      </button>
+                      {isSelected && (
+                        <button
+                          type="button"
+                          onClick={() => toggleInfo(`friend-template-${template.id}`)}
+                          className="mt-3 text-sm font-semibold text-[#174c38]"
+                        >
+                          {expandedInfo[`friend-template-${template.id}`] ? 'Hide Info' : 'More Info'}
+                        </button>
+                      )}
+                      {isSelected && expandedInfo[`friend-template-${template.id}`] && (
+                        <div className="mt-3 rounded-2xl bg-[#f8f3e9] px-3 py-3 text-sm text-[#536153]">
+                          {typeof firstGame.rules_json.summary === 'string' && firstGame.rules_json.summary
+                            ? firstGame.rules_json.summary
+                            : 'Friend-made setup ready to reuse.'}
                         </div>
                       )}
                     </div>
@@ -424,6 +650,14 @@ function formatRuleValue(value: unknown) {
                         <p className="mt-1 text-xs text-[#5a6758]">
                           ${preset.stakePlaceholder}/player default
                         </p>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          <span className={`status-chip ${preset.handicapMode === 'handicap' ? 'bg-[#ece5d6] text-[#6f695a]' : 'bg-[#dce8df] text-[#174c38]'}`}>
+                            {preset.handicapMode === 'handicap' ? 'Uses Handicap' : 'Gross Only'}
+                          </span>
+                          {preset.supportsTeams && (
+                            <span className="status-chip bg-[#f3ede2] text-[#6f695a]">Team Game</span>
+                          )}
+                        </div>
                       </div>
                       <div className={`flex h-7 w-7 items-center justify-center rounded-full border-2 transition ${
                         isSelected ? 'border-[#174c38] bg-[#174c38]' : 'border-[rgba(17,34,24,0.14)]'
@@ -443,6 +677,11 @@ function formatRuleValue(value: unknown) {
                     {isSelected && expandedInfo[preset.type] && (
                       <div className="mt-3 rounded-2xl bg-[#f8f3e9] px-3 py-3 text-sm text-[#536153]">
                         <p>{preset.description}</p>
+                        {preset.trackingNote && (
+                          <p className="mt-2 text-xs leading-5 text-[#6f695a]">
+                            {preset.trackingNote}
+                          </p>
+                        )}
                         {preset.supportsTeams && (
                           <p className="mt-2">
                             Team game
@@ -550,6 +789,10 @@ function formatRuleValue(value: unknown) {
                 </div>
               )
             })}
+
+            <p className="px-1 text-xs leading-5 text-[#6f695a]">
+              * Gross Only means the app scores raw strokes only, with no handicap or net-stroke adjustment. Uses Handicap means handicap is factored into that mode&apos;s scoring.
+            </p>
           </div>
         )}
 
@@ -581,6 +824,129 @@ function formatRuleValue(value: unknown) {
             >
               {aiLoading ? 'Generating…' : 'Generate Custom Game'}
             </button>
+
+            <div className="surface-card space-y-4 px-4 py-4">
+              <div>
+                <p className="text-sm font-semibold text-[#112218]">Build Without AI</p>
+                <p className="mt-1 text-sm text-[#5a6758]">
+                  Set the rules directly with quick options.
+                </p>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-[#5a6758]">
+                  Game Name
+                </label>
+                <input
+                  type="text"
+                  value={builderName}
+                  onChange={(e) => setBuilderName(e.target.value)}
+                  className="app-input"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-[#5a6758]">
+                  Stake Per Player
+                </label>
+                <input
+                  type="number"
+                  value={builderStake}
+                  onChange={(e) => setBuilderStake(e.target.value)}
+                  min={0}
+                  step={1}
+                  className="app-input"
+                />
+              </div>
+
+              <OptionRow
+                label="Game Mode"
+                options={[
+                  { value: 'hole_by_hole', label: 'Hole by Hole' },
+                  { value: 'match_play', label: 'Match Play' },
+                  { value: 'segment_match', label: 'Segments' },
+                ]}
+                selected={builderMode}
+                onSelect={(value) => setBuilderMode(value as CustomBuilderMode)}
+              />
+
+              <OptionRow
+                label="Matchup"
+                options={[
+                  { value: 'all_players', label: 'All Players' },
+                  { value: 'pairwise', label: 'Head to Head' },
+                ]}
+                selected={builderMatchup}
+                onSelect={(value) => setBuilderMatchup(value as CustomBuilderMatchup)}
+              />
+
+              <OptionRow
+                label="Tie Rule"
+                options={[
+                  { value: 'carry', label: 'Carry' },
+                  { value: 'push', label: 'Push' },
+                  { value: 'halve', label: 'Halve' },
+                  { value: 'split', label: 'Split' },
+                ]}
+                selected={builderTiePolicy}
+                onSelect={(value) => setBuilderTiePolicy(value as CustomBuilderTiePolicy)}
+              />
+
+              <OptionRow
+                label="Payout"
+                options={[
+                  { value: 'winner_takes_from_all', label: 'Winner Takes All' },
+                  { value: 'flat_match_bet', label: 'Flat Match Bet' },
+                ]}
+                selected={builderPayout}
+                onSelect={(value) => setBuilderPayout(value as CustomBuilderPayout)}
+              />
+
+              <div className="space-y-3 rounded-2xl bg-[#f8f3e9] px-3 py-3">
+                <label className="flex items-center gap-3 text-sm text-[#314131]">
+                  <input
+                    type="checkbox"
+                    checked={builderTeamPlay}
+                    onChange={(e) => {
+                      setBuilderTeamPlay(e.target.checked)
+                      if (!e.target.checked) setBuilderAllowTeamChanges(false)
+                    }}
+                    className="h-5 w-5 accent-[#174c38]"
+                  />
+                  Team mode
+                </label>
+                {builderTeamPlay && (
+                  <label className="flex items-center gap-3 text-sm text-[#314131]">
+                    <input
+                      type="checkbox"
+                      checked={builderAllowTeamChanges}
+                      onChange={(e) => setBuilderAllowTeamChanges(e.target.checked)}
+                      className="h-5 w-5 accent-[#174c38]"
+                    />
+                    Teams can change by hole
+                  </label>
+                )}
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => void saveSelectedGame(buildManualGame())}
+                  disabled={saving}
+                  className="primary-button flex-1 disabled:opacity-40"
+                >
+                  {saving ? 'Starting…' : 'Start With Builder'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void saveTemplate(buildManualGame(), 'Saved to your game modes.')}
+                  disabled={templateSaving}
+                  className="secondary-button flex-1 disabled:opacity-40"
+                >
+                  {templateSaving ? 'Saving…' : 'Save Mode'}
+                </button>
+              </div>
+            </div>
 
             {aiError && (
               <div className="rounded-2xl border border-[#e8b2a0] bg-[#fff1ec] px-4 py-3 text-sm text-[#a34d2d]">
@@ -686,5 +1052,39 @@ function formatRuleValue(value: unknown) {
         </div>
       </div>
     </AppShell>
+  )
+}
+
+function OptionRow({
+  label,
+  options,
+  selected,
+  onSelect,
+}: {
+  label: string
+  options: Array<{ value: string; label: string }>
+  selected: string
+  onSelect: (value: string) => void
+}) {
+  return (
+    <div>
+      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[#5a6758]">{label}</p>
+      <div className="flex flex-wrap gap-2">
+        {options.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => onSelect(option.value)}
+            className={`rounded-full border px-3 py-2 text-sm font-medium transition ${
+              selected === option.value
+                ? 'border-[#174c38] bg-[#174c38] text-[#f8f3e9]'
+                : 'border-[rgba(17,34,24,0.1)] bg-white text-[#536153]'
+            }`}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+    </div>
   )
 }

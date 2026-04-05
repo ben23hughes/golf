@@ -19,16 +19,19 @@ export default function SaveRoundDetails({
   roundId,
   currentCourseName,
   currentDate,
+  currentNotes,
 }: {
   canEdit?: boolean
   defaultOpen?: boolean
   roundId: string
   currentCourseName: string
   currentDate: string
+  currentNotes: string | null
 }) {
   const [open, setOpen] = useState(defaultOpen)
   const [courseName, setCourseName] = useState(currentCourseName)
   const [date, setDate] = useState(currentDate)
+  const [notes, setNotes] = useState(currentNotes ?? '')
   const [courseQuery, setCourseQuery] = useState(currentCourseName)
   const [courseResults, setCourseResults] = useState<CourseSearchResult[]>([])
   const [courseLookupError, setCourseLookupError] = useState('')
@@ -144,7 +147,7 @@ export default function SaveRoundDetails({
     const supabase = createClient()
     await supabase
       .from('rounds')
-      .update({ course_name: courseName.trim() || currentCourseName, date })
+      .update({ course_name: courseName.trim() || currentCourseName, date, notes: notes.trim() || null })
       .eq('id', roundId)
     setSaving(false)
     setSaved(true)
@@ -242,6 +245,17 @@ export default function SaveRoundDetails({
           value={date}
           onChange={(e) => setDate(e.target.value)}
           className="w-full border border-gray-200 rounded-xl px-4 py-3 text-base bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition"
+        />
+      </div>
+
+      <div className="space-y-1.5">
+        <label className="block text-sm font-medium text-gray-600">Notes</label>
+        <textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          rows={4}
+          placeholder="House rules, side bets, presses, junk, or anything else worth keeping with the round."
+          className="w-full resize-none rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-base transition focus:border-transparent focus:bg-white focus:outline-none focus:ring-2 focus:ring-green-500"
         />
       </div>
 

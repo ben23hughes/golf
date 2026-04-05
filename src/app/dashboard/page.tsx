@@ -11,7 +11,7 @@ import type { Game, Player, Score } from '@/types'
 type InviteJoin = { course_name: string }
 type InviterJoin = { name: string }
 type FriendProfile = { id: string; name: string; username: string; avatar_url?: string | null }
-type FriendRoundEntry = { id: string; name: string; avatar_url?: string | null; total: number }
+type FriendRoundEntry = { id: string; name: string; avatar_url: string | null | undefined; total: number }
 
 function pickOne<T>(value: T | T[] | null | undefined): T | null {
   if (!value) return null

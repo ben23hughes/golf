@@ -12,7 +12,7 @@ export default async function WelcomePage() {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('handicap, venmo_handle, onboarding_completed')
+    .select('name, avatar_url, handicap, venmo_handle, onboarding_completed')
     .eq('id', user.id)
     .single()
 
@@ -23,6 +23,8 @@ export default async function WelcomePage() {
   return (
     <WelcomeForm
       userId={user.id}
+      displayName={profile?.name ?? 'Golfer'}
+      initialAvatarUrl={profile?.avatar_url ?? null}
       initialHandicap={profile?.handicap ?? null}
       initialVenmoHandle={profile?.venmo_handle ?? null}
     />

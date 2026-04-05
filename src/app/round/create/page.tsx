@@ -280,15 +280,15 @@ export default function CreateRoundPage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { router.push('/auth/login'); return }
 
-    const today = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
     const date = getLocalDateValue()
     const teeBox = course?.tee_names.find((name) => name.toLowerCase() === 'white') ?? course?.tee_names[0] ?? 'White'
     const manualCourseName = courseQuery.trim()
+    const fallbackRoundName = `${namedPlayers[0]?.name?.trim() || 'Player'}'s Game`
 
     const { data: round, error: roundError } = await supabase
       .from('rounds')
       .insert({
-        course_name: course?.course_name || manualCourseName || today,
+        course_name: course?.course_name || manualCourseName || fallbackRoundName,
         date,
         tee_box: teeBox,
         created_by: user.id,

@@ -3,21 +3,53 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import Avatar from '@/components/Avatar'
 
 export default function WelcomeForm({
   userId,
+  displayName,
+  initialAvatarUrl,
   initialHandicap,
   initialVenmoHandle,
 }: {
   userId: string
+  displayName: string
+  initialAvatarUrl: string | null
   initialHandicap: number | null
   initialVenmoHandle: string | null
 }) {
   const router = useRouter()
+  const [avatarUrl, setAvatarUrl] = useState(initialAvatarUrl)
   const [handicap, setHandicap] = useState(initialHandicap?.toString() ?? '')
   const [venmoHandle, setVenmoHandle] = useState(initialVenmoHandle ?? '')
   const [loading, setLoading] = useState(false)
+  const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
+
+  async function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setError('')
+    setUploading(true)
+    const supabase = createClient()
+    const extension = file.name.split('.').pop()?.toLowerCase() || 'jpg'
+    const path = `${userId}/avatar.${extension}`
+
+    const { error: uploadError } = await supabase.storage
+      .from('avatars')
+      .upload(path, file, { upsert: true })
+
+    if (uploadError) {
+      setError(uploadError.message)
+      setUploading(false)
+      return
+    }
+
+    const { data } = supabase.storage.from('avatars').getPublicUrl(path)
+    setAvatarUrl(`${data.publicUrl}?t=${Date.now()}`)
+    setUploading(false)
+  }
 
   async function completeOnboarding(skip = false) {
     setError('')
@@ -44,6 +76,7 @@ export default function WelcomeForm({
     const updates = skip
       ? { onboarding_completed: true }
       : {
+          avatar_url: avatarUrl,
           handicap: parsedHandicap,
           venmo_handle: normalizedVenmoHandle || null,
           onboarding_completed: true,
@@ -83,6 +116,22 @@ export default function WelcomeForm({
               {error}
             </div>
           )}
+
+          <div className="flex items-center gap-4">
+            <Avatar name={displayName} avatarUrl={avatarUrl} size="lg" />
+            <div className="flex-1">
+              <label className="mb-2 block text-sm font-medium text-[#314131]">Profile Picture</label>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => void handleAvatarChange(e)}
+                className="block w-full text-sm text-[#536153]"
+              />
+              <p className="mt-2 text-xs text-[#5a6758]">
+                {uploading ? 'Uploading…' : 'Upload now or skip and add one later in profile.'}
+              </p>
+            </div>
+          </div>
 
           <div className="space-y-1.5">
             <label className="block text-sm font-medium text-[#314131]">Venmo Username</label>

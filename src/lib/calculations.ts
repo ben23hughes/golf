@@ -373,6 +373,7 @@ function calculateBanker(
 function calculateLeftRight(
   players: Player[],
   scoreMap: ScoreMap,
+  game: Game,
   stake: number,
   holesPlayed: number,
   holeMultipliers: Record<number, number> = {}
@@ -380,23 +381,16 @@ function calculateLeftRight(
   const winnings = initWinnings(players)
 
   for (let hole = 1; hole <= holesPlayed; hole++) {
-    const holeScores = getCompletedHoleScores(players, scoreMap, hole)
-    if (!holeScores) continue
+    const { A, B } = getTeamsForHole(game, hole, players)
+    const teamAScores = getPlayerScoresForHole(A, scoreMap, hole)
+    const teamBScores = getPlayerScoresForHole(B, scoreMap, hole)
+    if (teamAScores.length !== A.length || teamBScores.length !== B.length || A.length === 0 || B.length === 0) continue
 
-    const minScore = Math.min(...holeScores.map((score) => score.strokes))
-    const winners = holeScores.filter((score) => score.strokes === minScore)
-    if (winners.length !== 1) continue
+    const bestA = Math.min(...teamAScores)
+    const bestB = Math.min(...teamBScores)
+    if (bestA === bestB) continue
 
-    const winnerIndex = players.findIndex((player) => player.id === winners[0].id)
-    const leftNeighbor = players[(winnerIndex - 1 + players.length) % players.length]?.id
-    const rightNeighbor = players[(winnerIndex + 1) % players.length]?.id
-    const neighbors = Array.from(new Set([leftNeighbor, rightNeighbor].filter(Boolean))) as string[]
-    const unit = stake * (holeMultipliers[hole] ?? 1)
-
-    neighbors.forEach((neighborId) => {
-      winnings[winners[0].id] += unit
-      winnings[neighborId] -= unit
-    })
+    settleTeamVsTeam(A, B, bestA < bestB ? 'A' : 'B', stake * (holeMultipliers[hole] ?? 1), winnings)
   }
 
   return winnings
@@ -843,7 +837,7 @@ export function calculateLeaderboard(
         result = calculateBanker(players, scoreMap, game.stake, holesPlayed, holeMultipliers)
         break
       case 'left_right':
-        result = calculateLeftRight(players, scoreMap, game.stake, holesPlayed, holeMultipliers)
+        result = calculateLeftRight(players, scoreMap, game, game.stake, holesPlayed, holeMultipliers)
         break
       case 'quota':
         result = calculateQuota(players, scoreMap, game.stake, holesPlayed)

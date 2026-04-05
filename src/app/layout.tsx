@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Fraunces, Manrope } from "next/font/google";
+import AuthSessionBootstrap from "@/components/AuthSessionBootstrap";
 import "./globals.css";
 
 const bodyFont = Manrope({
@@ -63,7 +64,10 @@ export default function RootLayout({
       lang="en"
       className={`${bodyFont.variable} ${displayFont.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <AuthSessionBootstrap />
+        {children}
+      </body>
     </html>
   );
 }

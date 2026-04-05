@@ -13,6 +13,7 @@ export default function SignupPage() {
   const [handicap, setHandicap] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
   const [loading, setLoading] = useState(false)
 
   function normalizeUsername(value: string) {
@@ -26,6 +27,7 @@ export default function SignupPage() {
   async function handleSignup(e: React.FormEvent) {
     e.preventDefault()
     setError('')
+    setSuccess('')
     setLoading(true)
 
     try {
@@ -35,45 +37,33 @@ export default function SignupPage() {
         return
       }
 
-      const signupResponse = await fetch('/api/auth/signup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: name.trim(),
-          username: normalizedUsername,
-          email: email.trim(),
-          handicap: handicap.trim() ? Number.parseFloat(handicap) : null,
-          password,
-        }),
-      })
-
-      let signupResult: { error?: string } | null = null
-      try {
-        signupResult = (await signupResponse.json()) as { error?: string }
-      } catch {
-        signupResult = null
-      }
-
-      if (!signupResponse.ok) {
-        setError(signupResult?.error ?? 'Unable to create account. Check server env vars and try again.')
-        return
-      }
-
       const supabase = createClient()
-      const { error: signInError } = await supabase.auth.signInWithPassword({
+      const { data, error: signUpError } = await supabase.auth.signUp({
         email: email.trim().toLowerCase(),
         password,
+        options: {
+          data: {
+            full_name: name.trim(),
+            username: normalizedUsername,
+            handicap: handicap.trim() ? Number.parseFloat(handicap) : null,
+          },
+        },
       })
 
-      if (signInError) {
-        setError(signInError.message)
+      if (signUpError) {
+        setError(signUpError.message)
         return
       }
 
-      router.push('/')
+      if (!data.session) {
+        setSuccess('Account created. Check your email to confirm your account, then sign in.')
+        return
+      }
+
+      router.push('/dashboard')
       router.refresh()
     } catch {
-      setError('Signup failed unexpectedly. If this is deployed, verify Supabase environment variables are set.')
+      setError('Signup failed unexpectedly. Please try again.')
     } finally {
       setLoading(false)
     }
@@ -101,6 +91,12 @@ export default function SignupPage() {
         </div>
 
         <form onSubmit={handleSignup} className="surface-card-strong mt-4 space-y-5 p-5">
+          {success && (
+            <div className="rounded-2xl border border-[#bfd1c4] bg-[#edf4ef] px-4 py-3 text-sm text-[#174c38]">
+              {success}
+            </div>
+          )}
+
           {error && (
             <div className="rounded-2xl border border-[#e8b2a0] bg-[#fff1ec] px-4 py-3 text-sm text-[#a34d2d]">
               {error}

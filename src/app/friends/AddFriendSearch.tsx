@@ -38,6 +38,12 @@ export default function AddFriendSearch({ currentUserId }: { currentUserId: stri
     if (error) {
       setSentTo((prev) => ({ ...prev, [targetId]: error.code === '23505' ? 'already_friends' : 'error' }))
     } else {
+      await fetch('/api/push/friend-request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ addresseeUserId: targetId }),
+      })
+
       setSentTo((prev) => ({ ...prev, [targetId]: 'sent' }))
     }
   }

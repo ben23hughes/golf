@@ -8,6 +8,13 @@ type RoundInvitePushPayload = {
   tag: string
 }
 
+type FriendRequestPushPayload = {
+  title: string
+  body: string
+  url: string
+  tag: string
+}
+
 type StoredPushSubscription = {
   endpoint: string
   p256dh: string
@@ -27,17 +34,17 @@ function configureWebPush() {
   return true
 }
 
-export async function sendRoundInvitePush(
-  invitedUserIds: string[],
-  payload: RoundInvitePushPayload
+async function sendPushToUsers(
+  userIds: string[],
+  payload: RoundInvitePushPayload | FriendRequestPushPayload
 ) {
-  if (invitedUserIds.length === 0 || !configureWebPush()) return
+  if (userIds.length === 0 || !configureWebPush()) return
 
   const admin = createAdminClient()
   const { data: subscriptions, error } = await admin
     .from('push_subscriptions')
     .select('endpoint, p256dh, auth')
-    .in('user_id', invitedUserIds)
+    .in('user_id', userIds)
 
   if (error || !subscriptions?.length) {
     if (error) {
@@ -85,4 +92,18 @@ export async function sendRoundInvitePush(
       .delete()
       .in('endpoint', invalidEndpoints)
   }
+}
+
+export async function sendRoundInvitePush(
+  invitedUserIds: string[],
+  payload: RoundInvitePushPayload
+) {
+  await sendPushToUsers(invitedUserIds, payload)
+}
+
+export async function sendFriendRequestPush(
+  addresseeUserIds: string[],
+  payload: FriendRequestPushPayload
+) {
+  await sendPushToUsers(addresseeUserIds, payload)
 }

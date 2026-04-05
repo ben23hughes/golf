@@ -10,7 +10,6 @@ export default function SignupPage() {
   const [name, setName] = useState('')
   const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
-  const [handicap, setHandicap] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
@@ -45,7 +44,6 @@ export default function SignupPage() {
           data: {
             full_name: name.trim(),
             username: normalizedUsername,
-            handicap: handicap.trim() ? Number.parseFloat(handicap) : null,
           },
         },
       })
@@ -60,7 +58,7 @@ export default function SignupPage() {
         return
       }
 
-      router.push('/dashboard')
+      router.push('/welcome')
       router.refresh()
     } catch {
       setError('Signup failed unexpectedly. Please try again.')
@@ -139,19 +137,6 @@ export default function SignupPage() {
               required
               className="app-input"
               placeholder="you@example.com"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="block text-sm font-medium text-[#314131]">HCP</label>
-            <input
-              type="number"
-              inputMode="decimal"
-              step="0.1"
-              value={handicap}
-              onChange={(e) => setHandicap(e.target.value)}
-              className="app-input"
-              placeholder="HCP, e.g. 8.4"
             />
           </div>
 

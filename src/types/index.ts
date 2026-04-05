@@ -7,6 +7,7 @@ export type User = {
   handicap: number | null
   ghin_number: string | null
   venmo_handle?: string | null
+  onboarding_completed?: boolean
   created_at: string
 }
 

@@ -103,6 +103,7 @@ export default function GamesPage() {
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null)
   const [templateNameInput, setTemplateNameInput] = useState('')
   const [saving, setSaving] = useState(false)
+  const [quitting, setQuitting] = useState(false)
   const [error, setError] = useState('')
 
   // AI builder
@@ -345,6 +346,26 @@ function formatRuleValue(value: unknown) {
 
   async function handleSave() {
     await saveSelectedGame(selected)
+  }
+
+  async function handleQuit() {
+    const confirmed = window.confirm('Quit this round setup? The round and players will be deleted.')
+    if (!confirmed) return
+
+    setError('')
+    setQuitting(true)
+
+    const supabase = createClient()
+    const { error: deleteError } = await supabase.from('rounds').delete().eq('id', roundId)
+
+    if (deleteError) {
+      setError(deleteError.message)
+      setQuitting(false)
+      return
+    }
+
+    router.push('/dashboard')
+    router.refresh()
   }
 
   function buildManualGame(): SelectedGame {
@@ -1043,11 +1064,19 @@ function formatRuleValue(value: unknown) {
 
         <div className="mt-2">
           <button
-            disabled={saving}
+            disabled={saving || quitting}
             onClick={handleSave}
             className="primary-button w-full disabled:opacity-40"
           >
             {saving ? 'Saving…' : selected ? 'Start Round' : 'Skip — Start Round'}
+          </button>
+          <button
+            type="button"
+            disabled={saving || quitting}
+            onClick={() => void handleQuit()}
+            className="mt-3 w-full rounded-2xl border border-[#e8b2a0] bg-[#fff1ec] px-4 py-3 text-sm font-semibold text-[#a34d2d] disabled:opacity-50"
+          >
+            {quitting ? 'Quitting…' : 'Quit'}
           </button>
         </div>
       </div>

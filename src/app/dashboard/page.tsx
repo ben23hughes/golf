@@ -29,7 +29,7 @@ export default async function DashboardPage() {
   if (!user) redirect('/auth/login')
 
   const [{ data: profile }, { data: myRounds }, { data: friendships }, { data: pendingInvites }, { data: acceptedInvites }] = await Promise.all([
-    supabase.from('profiles').select('name, username, avatar_url').eq('id', user.id).single(),
+    supabase.from('profiles').select('name, username, avatar_url, onboarding_completed').eq('id', user.id).single(),
     supabase
       .from('rounds')
       .select('*, players(count)')
@@ -60,6 +60,10 @@ export default async function DashboardPage() {
       .eq('status', 'accepted')
       .order('created_at', { ascending: false }),
   ])
+
+  if (profile && !profile.onboarding_completed) {
+    redirect('/welcome')
+  }
 
   const joinedRoundIds = Array.from(new Set((acceptedInvites ?? []).map((invite) => invite.round_id)))
   const { data: joinedRounds } = joinedRoundIds.length > 0

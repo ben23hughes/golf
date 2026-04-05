@@ -200,6 +200,37 @@ export default async function SummaryPage({
           </section>
         )}
 
+        <section>
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">Players</h2>
+          <div className="space-y-2">
+            {(players as Player[]).map((player) => {
+              const venmoHandle = player.user_id ? venmoByUserId.get(player.user_id) : null
+              return (
+                <div key={player.id} className="flex items-center justify-between rounded-2xl bg-white px-4 py-3 shadow-sm">
+                  <div>
+                    <p className="font-medium text-gray-900">{player.name}</p>
+                    {player.handicap != null && (
+                      <p className="mt-0.5 text-xs text-gray-500">HCP {player.handicap}</p>
+                    )}
+                  </div>
+                  {venmoHandle ? (
+                    <Link
+                      href={`https://venmo.com/${venmoHandle.replace(/^@+/, '')}`}
+                      target="_blank"
+                      className="inline-flex items-center gap-1 rounded-full border border-[#178b53] px-3 py-2 text-xs font-semibold text-[#178b53]"
+                    >
+                      <span className="text-sm font-black leading-none">V</span>
+                      @{venmoHandle.replace(/^@+/, '')}
+                    </Link>
+                  ) : (
+                    <span className="text-xs text-gray-400">No Venmo</span>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </section>
+
         {/* Full scorecard */}
         <section>
           <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Full Scorecard</h2>

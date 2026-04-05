@@ -6,7 +6,13 @@ export default async function Home() {
   const { data: { user } } = await supabase.auth.getUser()
 
   if (user) {
-    redirect('/dashboard')
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('onboarding_completed')
+      .eq('id', user.id)
+      .single()
+
+    redirect(profile?.onboarding_completed ? '/dashboard' : '/welcome')
   } else {
     redirect('/auth/signup')
   }

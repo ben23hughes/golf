@@ -10,7 +10,7 @@ export default async function ProfilePage() {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('name, username, email, avatar_url, handicap, ghin_number')
+    .select('name, username, email, avatar_url, handicap, ghin_number, venmo_handle')
     .eq('id', user.id)
     .single()
 
@@ -32,6 +32,7 @@ export default async function ProfilePage() {
           initialAvatarUrl={profile.avatar_url}
           initialHandicap={profile.handicap}
           initialGhinNumber={profile.ghin_number}
+          initialVenmoHandle={profile.venmo_handle}
         />
       </div>
     </AppShell>

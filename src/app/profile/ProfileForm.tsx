@@ -14,6 +14,7 @@ type ProfileFormProps = {
   initialAvatarUrl: string | null
   initialHandicap: number | null
   initialGhinNumber: string | null
+  initialVenmoHandle: string | null
 }
 
 function normalizeUsername(value: string) {
@@ -32,6 +33,7 @@ export default function ProfileForm({
   initialAvatarUrl,
   initialHandicap,
   initialGhinNumber,
+  initialVenmoHandle,
 }: ProfileFormProps) {
   const router = useRouter()
   const [name, setName] = useState(initialName)
@@ -39,6 +41,7 @@ export default function ProfileForm({
   const [avatarUrl, setAvatarUrl] = useState(initialAvatarUrl)
   const [handicap, setHandicap] = useState(initialHandicap?.toString() ?? '')
   const [ghinNumber, setGhinNumber] = useState(initialGhinNumber ?? '')
+  const [venmoHandle, setVenmoHandle] = useState(initialVenmoHandle ?? '')
   const [error, setError] = useState('')
   const [saved, setSaved] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -91,6 +94,12 @@ export default function ProfileForm({
       return
     }
 
+    const normalizedVenmoHandle = venmoHandle.trim().replace(/^@+/, '')
+    if (normalizedVenmoHandle && !/^[a-zA-Z0-9_-]{2,30}$/.test(normalizedVenmoHandle)) {
+      setError('Venmo must use 2-30 letters, numbers, dashes, or underscores.')
+      return
+    }
+
     setLoading(true)
     const supabase = createClient()
     const { error: updateError } = await supabase
@@ -101,6 +110,7 @@ export default function ProfileForm({
         avatar_url: avatarUrl,
         handicap: parsedHandicap,
         ghin_number: ghinNumber.trim() || null,
+        venmo_handle: normalizedVenmoHandle || null,
       })
       .eq('id', userId)
 
@@ -206,6 +216,20 @@ export default function ProfileForm({
             className="app-input"
             placeholder="Optional"
           />
+        </div>
+
+        <div>
+          <label className="mb-2 block text-sm font-medium text-[#314131]">Venmo</label>
+          <input
+            type="text"
+            value={venmoHandle}
+            onChange={(e) => setVenmoHandle(e.target.value.replace(/\s+/g, ''))}
+            className="app-input"
+            placeholder="@yourhandle"
+          />
+          <p className="mt-2 text-xs text-[#5a6758]">
+            Add your Venmo so round settlements can open straight into pay or request.
+          </p>
         </div>
 
         <button

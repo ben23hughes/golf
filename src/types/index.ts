@@ -6,6 +6,7 @@ export type User = {
   avatar_url?: string | null
   handicap: number | null
   ghin_number: string | null
+  venmo_handle?: string | null
   created_at: string
 }
 

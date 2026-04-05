@@ -138,7 +138,7 @@ export default function ScorecardPage() {
   async function finishRound() {
     const supabase = createClient()
     await supabase.from('rounds').update({ status: 'completed' }).eq('id', roundId)
-    router.push(`/round/${roundId}/summary`)
+    router.push(`/round/${roundId}/summary?open=details`)
   }
 
   const currentMultiplier = holeMultipliers[currentHole] ?? 1

@@ -10,16 +10,42 @@ function fmt(n: number) {
   return n >= 0 ? `+$${abs}` : `-$${abs}`
 }
 
-export default async function SummaryPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id: roundId } = await params
-  const supabase = await createClient()
+function buildVenmoUrl(handle: string, amount: number, note: string, txn: 'pay' | 'charge') {
+  const params = new URLSearchParams({
+    txn,
+    recipients: handle.replace(/^@+/, ''),
+    amount: amount.toFixed(2),
+    note,
+  })
+  return `https://account.venmo.com/pay?${params.toString()}`
+}
 
-  const [{ data: round }, { data: players }, { data: scores }, { data: games }, { data: modifiers }] = await Promise.all([
+export default async function SummaryPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>
+  searchParams?: Promise<{ from?: string; open?: string }>
+}) {
+  const { id: roundId } = await params
+  const resolvedSearchParams = searchParams ? await searchParams : undefined
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  const [{ data: round }, { data: players }, { data: scores }, { data: games }, { data: modifiers }, { data: participantRow }] = await Promise.all([
     supabase.from('rounds').select('*').eq('id', roundId).single(),
     supabase.from('players').select('*').eq('round_id', roundId).order('created_at'),
     supabase.from('scores').select('*').eq('round_id', roundId),
     supabase.from('games').select('*').eq('round_id', roundId),
     supabase.from('hole_modifiers').select('hole_number, multiplier').eq('round_id', roundId),
+    user?.id
+      ? supabase
+          .from('players')
+          .select('id')
+          .eq('round_id', roundId)
+          .eq('user_id', user.id)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
   ])
 
   if (!round) notFound()
@@ -42,11 +68,55 @@ export default async function SummaryPage({ params }: { params: Promise<{ id: st
   // Build who owes whom
   const positives = entries.filter((e) => e.total > 0)
   const negatives = entries.filter((e) => e.total < 0)
+  const userIds = (players ?? [])
+    .map((player) => player.user_id)
+    .filter((playerId): playerId is string => Boolean(playerId))
+
+  const { data: profiles } = userIds.length > 0
+    ? await supabase
+      .from('profiles')
+      .select('id, venmo_handle')
+      .in('id', userIds)
+    : { data: [] }
+
+  const venmoByUserId = new Map((profiles ?? []).map((profile) => [profile.id, profile.venmo_handle]))
+
+  const remainingWinners = positives.map((winner) => ({ ...winner, remaining: winner.total }))
+  const settlements: Array<{
+    loser: typeof entries[number]
+    winner: typeof entries[number]
+    amount: number
+  }> = []
+
+  for (const loser of negatives) {
+    let remainingLoss = Math.abs(loser.total)
+
+    for (const winner of remainingWinners) {
+      if (remainingLoss <= 0) break
+      if (winner.remaining <= 0) continue
+
+      const amount = Math.min(remainingLoss, winner.remaining)
+      if (amount <= 0) continue
+
+      settlements.push({ loser, winner, amount })
+      remainingLoss -= amount
+      winner.remaining -= amount
+    }
+  }
+
+  const isDashboardOrigin = resolvedSearchParams?.from === 'dashboard'
+  const openDetailsOnLoad = resolvedSearchParams?.open === 'details'
+  const canEditRound = Boolean(user?.id && (round.created_by === user.id || participantRow))
 
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="bg-white border-b border-gray-100 px-5 pt-14 pb-4">
-        <Link href={`/round/${roundId}/leaderboard`} className="text-gray-400 text-sm font-medium block mb-3">← Back</Link>
+        <Link
+          href={isDashboardOrigin ? '/dashboard' : `/round/${roundId}/leaderboard`}
+          className="text-gray-400 text-sm font-medium block mb-3"
+        >
+          ← Back
+        </Link>
         <h1 className="text-xl font-bold text-gray-900">{round.course_name}</h1>
         <p className="text-gray-400 text-sm mt-0.5">{date} · {maxHole} holes</p>
       </div>
@@ -84,20 +154,47 @@ export default async function SummaryPage({ params }: { params: Promise<{ id: st
           <section>
             <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Settlement</h2>
             <div className="bg-white rounded-2xl p-4 shadow-sm space-y-2">
-              {negatives.map((loser) => (
-                positives.map((winner) => {
-                  const amount = Math.min(Math.abs(loser.total), winner.total)
-                  if (amount <= 0) return null
-                  return (
-                    <div key={`${loser.player.id}-${winner.player.id}`} className="flex items-center gap-2 text-sm">
-                      <span className="font-medium text-red-500">{loser.player.name}</span>
-                      <span className="text-gray-400">owes</span>
-                      <span className="font-medium text-green-600">{winner.player.name}</span>
-                      <span className="ml-auto font-semibold text-gray-900">${Math.abs(loser.total).toFixed(2)}</span>
+              {settlements.map(({ loser, winner, amount }) => {
+                const loserVenmo = loser.player.user_id ? venmoByUserId.get(loser.player.user_id) : null
+                const winnerVenmo = winner.player.user_id ? venmoByUserId.get(winner.player.user_id) : null
+                const isLoser = user?.id === loser.player.user_id
+                const isWinner = user?.id === winner.player.user_id
+                const venmoTarget = isLoser ? winnerVenmo : isWinner ? loserVenmo : null
+                const venmoTxn = isLoser ? 'pay' : isWinner ? 'charge' : null
+                const venmoLabel = isLoser ? `Pay @${winnerVenmo}` : isWinner ? `Request @${loserVenmo}` : null
+
+                return (
+                  <div
+                    key={`${loser.player.id}-${winner.player.id}`}
+                    className="flex items-center gap-3 rounded-xl border border-gray-100 px-3 py-2.5 text-sm"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-gray-900">
+                        <span className="font-medium text-red-500">{loser.player.name}</span>
+                        <span className="mx-1 text-gray-400">owes</span>
+                        <span className="font-medium text-green-600">{winner.player.name}</span>
+                      </p>
+                      <p className="mt-0.5 text-xs text-gray-400">
+                        ${amount.toFixed(2)}
+                      </p>
                     </div>
-                  )
-                })
-              ))}
+                    {venmoTarget && venmoTxn && venmoLabel ? (
+                      <Link
+                        href={buildVenmoUrl(
+                          venmoTarget,
+                          amount,
+                          `${round.course_name} round settlement`,
+                          venmoTxn
+                        )}
+                        target="_blank"
+                        className="rounded-full bg-[#178b53] px-3 py-2 text-xs font-semibold text-white"
+                      >
+                        {venmoLabel}
+                      </Link>
+                    ) : null}
+                  </div>
+                )
+              })}
             </div>
           </section>
         )}
@@ -154,12 +251,15 @@ export default async function SummaryPage({ params }: { params: Promise<{ id: st
         </section>
 
         {/* Save round details */}
-        <SaveRoundDetails
-          roundId={roundId}
-          currentCourseName={round.course_name}
-          currentDate={round.date}
-          currentTeeBox={round.tee_box}
-        />
+        {canEditRound && (
+          <SaveRoundDetails
+            canEdit={canEditRound}
+            defaultOpen={openDetailsOnLoad}
+            roundId={roundId}
+            currentCourseName={round.course_name}
+            currentDate={round.date}
+          />
+        )}
 
         {/* Back to dashboard */}
         <Link

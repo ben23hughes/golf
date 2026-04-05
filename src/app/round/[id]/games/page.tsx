@@ -557,13 +557,13 @@ function formatRuleValue(value: unknown) {
           <div className="space-y-4">
             <div className="surface-card-strong px-5 py-5">
               <h2 className="font-serif text-2xl font-semibold text-[#112218]">AI Game Builder</h2>
-              <p className="mt-2 text-sm leading-6 text-[#5a6758]">Describe a custom game in plain English.</p>
+              <p className="mt-2 text-sm leading-6 text-[#5a6758]">Describe the type of game you want to play and AI will make it for you.</p>
             </div>
 
             <textarea
               value={aiInput}
               onChange={(e) => setAiInput(e.target.value)}
-              placeholder="$5 Nassau with automatic presses"
+              placeholder="2v2 game 10 dollars a hole"
               rows={4}
               className="app-input resize-none"
             />

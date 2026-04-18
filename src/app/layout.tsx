@@ -20,6 +20,11 @@ export const metadata: Metadata = {
   title: "Golf Bet Live",
   description: "Track golf bets, rounds, and side games with friends.",
   applicationName: "Golf Bet Live",
+  appleWebApp: {
+    capable: true,
+    title: "Golf Bet Live",
+    statusBarStyle: "default",
+  },
   icons: {
     icon: "/appicon.png",
     apple: "/appicon.png",
@@ -64,7 +69,10 @@ export default function RootLayout({
       lang="en"
       className={`${bodyFont.variable} ${displayFont.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">
+      <body
+        className="min-h-full flex flex-col"
+        style={{ backgroundColor: "#f3efe6", color: "#112218" }}
+      >
         <AuthSessionBootstrap />
         {children}
       </body>

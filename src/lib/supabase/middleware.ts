@@ -4,6 +4,16 @@ import { supabaseCookieOptions } from './cookieOptions'
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
+  const { pathname } = request.nextUrl
+  const publicPaths = ['/', '/auth/login', '/auth/signup', '/auth/callback', '/round']
+
+  const isPublic = publicPaths.some((p) =>
+    p === '/' ? pathname === '/' : pathname.startsWith(p)
+  )
+
+  if (isPublic) {
+    return supabaseResponse
+  }
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -28,12 +38,6 @@ export async function updateSession(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser()
-
-  const { pathname } = request.nextUrl
-
-  const publicPaths = ['/auth/login', '/auth/signup', '/auth/callback', '/round']
-
-  const isPublic = publicPaths.some((p) => pathname.startsWith(p))
 
   if (!user && !isPublic && pathname !== '/') {
     const url = request.nextUrl.clone()
